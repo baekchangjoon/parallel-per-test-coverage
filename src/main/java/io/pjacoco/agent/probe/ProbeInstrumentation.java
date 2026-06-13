@@ -1,5 +1,6 @@
 package io.pjacoco.agent.probe;
 
+import static net.bytebuddy.matcher.ElementMatchers.nameEndsWith;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import io.pjacoco.agent.AgentOptions;
@@ -36,11 +37,13 @@ public final class ProbeInstrumentation {
                 // instrumentation recursively.
                 .with(AgentBuilder.CircularityLock.Inactive.INSTANCE)
                 .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-                .type(named("org.jacoco.core.internal.instr.ProbeInserter"))
+                // Suffix match so this resolves both the relocated (io.pjacoco.shaded.jacoco.*) classes
+                // in the agent jar and the un-relocated (org.jacoco.*) ones in the in-process ITs.
+                .type(nameEndsWith("jacoco.core.internal.instr.ProbeInserter"))
                 .transform((b, t, cl, m, pd) -> b
                         .visit(Advice.to(VisitMaxsAdvice.class).on(named("visitMaxs")))
                         .visit(Advice.to(InsertProbeAdvice.class).on(named("insertProbe"))))
-                .type(named("org.jacoco.core.internal.instr.ClassInstrumenter"))
+                .type(nameEndsWith("jacoco.core.internal.instr.ClassInstrumenter"))
                 .transform((b, t, cl, m, pd) -> b
                         .visit(Advice.to(VisitTotalProbeCountAdvice.class).on(named("visitTotalProbeCount"))))
                 .installOn(inst);

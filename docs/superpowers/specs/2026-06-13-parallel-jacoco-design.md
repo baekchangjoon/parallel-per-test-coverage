@@ -77,7 +77,7 @@
 | `CoverageBridge` (계측 브리지) | 계측 클래스가 프로브마다 호출하는 정적 `recordCoverage(Class clazz, long classId, int probeId)`(**핫패스**) — 활성 testId 스토어에 기록. 프로브 수는 `setTotalProbeCount(className, count)`로 계측 시점 캡처. additive | `CoverageContext`, `TestStoreRegistry` |
 | `CoverageContext` (ThreadLocal) | 현 스레드의 활성 **`TestStore` 참조** 보유(요청 활성화 시 해소). 없으면 untagged(미기록) | — |
 | `TestStore` | 한 testId의 누적 커버리지 `ConcurrentHashMap<classId, boolean[]>` (+ classId→className) | — |
-| `TestStoreRegistry` | testId → TestStore. start에서 생성, stop에서 flush·제거. 상한·TTL 가드 | `ExecWriter` |
+| `TestStoreRegistry` | testId → TestStore. start에서 생성, stop에서 flush·제거. **상한 가드**(시간 기반 TTL 축출은 phase 2) | `ExecWriter` |
 | `InboundActivator` (SPI) | 인입 요청에서 **OTel Baggage**(`baggage` 헤더)의 `test.id` 추출 → 레지스트리 조회 → `CoverageContext` 활성화/해제 | `CoverageContext`, `TestStoreRegistry` |
 | `ServletInboundActivator` | `InboundActivator`의 v1 서블릿 구현. **단일 choke point**(예: `HttpServlet#service` 1곳)만 advise — 계층 전체에 걸어 enter/exit가 중첩되면 안쪽 exit가 컨텍스트를 조기 clear할 수 있음(S6). 재진입 가드 또는 최상위 1곳 한정 | Servlet API, byte-buddy |
 | `ControlEndpoint` | `POST /__coverage__/test/start\|stop`. loopback 기본 바인딩 | `TestStoreRegistry` |
@@ -271,8 +271,9 @@ fire-and-forget/비동기 후처리를 기다리는 **drain 모드는 phase 2**.
 - **우리 코드는 절대 대상 앱을 죽이지 않는다.** `CoverageBridge.recordCoverage` 경로의 모든 예외는
   catch·로그 후 삼킨다 — 커버리지 손실이 앱 크래시보다 낫다. 추가형 설계라 우리가 꺼져도
   앱 로직은 무관.
-- **메모리 가드**: stop 안 오는 스토어 누수 방지 — 레지스트리 상한 + TTL 축출. 상한 초과 시
-  가장 오래된 미flush 스토어를 `partial`로 덤프.
+- **메모리 가드**: stop 안 오는 스토어 누수 방지 — **레지스트리 상한 가드**(v1). 상한 초과 시
+  가장 오래된 미flush 스토어를 `partial`로 덤프. **시간 기반 TTL 축출은 phase 2**(상한이 v1의
+  크래시 안전 필수, TTL은 보강).
 
 ### 7.5 제어 엔드포인트 보안
 
@@ -284,7 +285,7 @@ fire-and-forget/비동기 후처리를 기다리는 **drain 모드는 phase 2**.
 다음을 구조화 로그 + 카운터로 남긴다:
 
 - `CoverageBridge`에서 삼킨 예외 (스택, classId) — **rate-limited / 집계 카운트**로 폭주 방지.
-- 레지스트리 상한 초과·TTL 축출 (어느 testId가 `partial`로 덤프됐는지).
+- 레지스트리 상한 초과 축출 (어느 testId가 `partial`로 덤프됐는지). (시간 기반 TTL은 phase 2)
 - 엄격 모드에서 미등록 testId 요청 거부 (어느 testId).
 - 재시도 덮어쓰기 (testId, 새 retryCount).
 - stop 없이 종료 시 강제 덤프된 스토어 수.

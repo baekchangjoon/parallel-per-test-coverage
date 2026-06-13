@@ -32,7 +32,7 @@ src/main/java/io/pjacoco/agent/
   context/CoverageContext.java   ThreadLocal<TestStore> active store (resolved at request activation)
   store/TestStore.java           per-testId coverage: ConcurrentHashMap<Long, ClassProbes>
   store/ClassProbes.java         className + boolean[] for one class
-  store/TestStoreRegistry.java   testId -> TestStore; start/stop; cap + TTL guard
+  store/TestStoreRegistry.java   testId -> TestStore; start/stop; cap guard (time-based TTL: phase 2)
   probe/CoverageBridge.java      static recordCoverage(Class,classId,probeId) + setTotalProbeCount(name,count); hot path; swallows errors
   probe/ProbeInstrumentation.java jacoco Instrumenter ClassFileTransformer + ByteBuddy advice on jacoco internals (ported from spike/)
   probe/InsertProbeAdvice.java   body-only advice: emit additive recordCoverage call (ported from spike/)
@@ -1613,6 +1613,7 @@ public class VisitTotalProbeCountAdvice {
 ```java
 package io.pjacoco.agent.probe;
 
+import static net.bytebuddy.matcher.ElementMatchers.nameEndsWith;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import io.pjacoco.agent.AgentOptions;
@@ -1623,7 +1624,7 @@ import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
 import org.jacoco.core.instr.Instrumenter;
 import org.jacoco.core.runtime.IRuntime;
-import org.jacoco.core.runtime.ModifiedSystemClassRuntime;
+import org.jacoco.core.runtime.LoggerRuntime;
 import org.jacoco.core.runtime.RuntimeData;
 import org.jacoco.core.runtime.WildcardMatcher;
 
@@ -1637,25 +1638,50 @@ public final class ProbeInstrumentation {
      */
     public static void install(Instrumentation inst, AgentOptions options) throws Exception {
         // (1) body-only advice on jacoco internals — disableClassFormatChanges() is correct here.
+        //     CircularityLock.Inactive + suffix matchers (nameEndsWith) so this resolves both the
+        //     relocated (io.pjacoco.shaded.jacoco.*) classes in the shaded agent jar AND the
+        //     un-relocated (org.jacoco.*) ones in the in-process ITs.
         new AgentBuilder.Default()
                 .disableClassFormatChanges()
+                .with(AgentBuilder.CircularityLock.Inactive.INSTANCE)
                 .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-                .type(named("org.jacoco.core.internal.instr.ProbeInserter"))
+                .type(nameEndsWith("jacoco.core.internal.instr.ProbeInserter"))
                 .transform((b, t, cl, m, pd) -> b
                         .visit(Advice.to(VisitMaxsAdvice.class).on(named("visitMaxs")))
                         .visit(Advice.to(InsertProbeAdvice.class).on(named("insertProbe"))))
-                .type(named("org.jacoco.core.internal.instr.ClassInstrumenter"))
+                .type(nameEndsWith("jacoco.core.internal.instr.ClassInstrumenter"))
                 .transform((b, t, cl, m, pd) -> b
                         .visit(Advice.to(VisitTotalProbeCountAdvice.class).on(named("visitTotalProbeCount"))))
                 .installOn(inst);
 
-        // (2) jacoco runtime (production choice: inject into a system class, like the real jacoco agent).
-        IRuntime runtime = ModifiedSystemClassRuntime.createFor(inst, "java/lang/UnknownError");
+        // (2) LoggerRuntime: in-process data channel so instrumented classes' $jacocoInit resolves
+        //     (matches the validated spike and the spec's "예: LoggerRuntime"). We don't consume
+        //     jacoco's global data — our bridge records per-test.
+        IRuntime runtime = new LoggerRuntime();
         runtime.startup(new RuntimeData());
 
-        // (3) instrument app classes via jacoco — yields vanilla-identical classId + probe scheme.
         Instrumenter instrumenter = new Instrumenter(runtime);
+        // (3) WARM UP — force ProbeInserter to load + be advised NOW, in a clean context. If it first
+        //     loads lazily inside our own transform(), ByteBuddy skips advising it and per-test routing
+        //     silently no-ops (docs/research/m4-mechanism/03-spike-code.md §7).
+        warmUp(instrumenter);
+
+        // (4) instrument app classes via jacoco — yields vanilla-identical classId + probe scheme.
         inst.addTransformer(new JacocoTransformer(instrumenter, options), false);
+    }
+
+    /** Instruments a throwaway WarmupTarget (a class with a branch) so ProbeInserter loads+advised. */
+    private static void warmUp(Instrumenter instrumenter) {
+        try {
+            java.io.InputStream in = ProbeInstrumentation.class.getResourceAsStream(
+                    "/io/pjacoco/agent/probe/WarmupTarget.class");
+            if (in == null) return;
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096]; int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            in.close();
+            instrumenter.instrument(bos.toByteArray(), "io/pjacoco/agent/probe/WarmupTarget");
+        } catch (Throwable ignored) { /* best-effort */ }
     }
 
     /** Instruments matching app classes with jacoco's Instrumenter. Never breaks class loading. */
@@ -1693,10 +1719,12 @@ public final class ProbeInstrumentation {
 ```
 
 > **What's validated vs new:** the advice + bridge + per-test routing (the hard, version-fragile
-> part) is **validated by `spike/`**. The `ClassFileTransformer` + `ModifiedSystemClassRuntime`
-> wiring is *standard jacoco-agent plumbing* (jacoco's own agent does exactly this) — lower risk,
-> but confirm `ModifiedSystemClassRuntime.createFor(...)` works under the real `-javaagent` in
-> Task 15. `WildcardMatcher` / `ModifiedSystemClassRuntime` are public jacoco-core API.
+> part) is **validated by `spike/`**. The `ClassFileTransformer` + `LoggerRuntime` + warm-up wiring is
+> *standard jacoco-agent plumbing* exercised by the Task 15 e2e. Two as-built findings (see
+> `docs/research/m4-mechanism/03-spike-code.md §7`): (a) **warm-up is mandatory** — without it
+> ProbeInserter loads un-advised inside our transform and routing silently no-ops; (b) the jacoco
+> hook uses **suffix matchers** + a throwaway `WarmupTarget` class. `WildcardMatcher` / `LoggerRuntime`
+> are public jacoco-core API.
 
 - [ ] **Step 3: Port `TargetService` + write the in-process acceptance IT (`ProbeRoutingIT`)**
 
@@ -1804,12 +1832,13 @@ Add `ProbeInstrumentation.installHookOnly(Instrumentation)` — the advice-insta
     public static void installHookOnly(Instrumentation inst) {
         new AgentBuilder.Default()
                 .disableClassFormatChanges()
+                .with(AgentBuilder.CircularityLock.Inactive.INSTANCE)
                 .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-                .type(named("org.jacoco.core.internal.instr.ProbeInserter"))
+                .type(nameEndsWith("jacoco.core.internal.instr.ProbeInserter"))
                 .transform((b, t, cl, m, pd) -> b
                         .visit(Advice.to(VisitMaxsAdvice.class).on(named("visitMaxs")))
                         .visit(Advice.to(InsertProbeAdvice.class).on(named("insertProbe"))))
-                .type(named("org.jacoco.core.internal.instr.ClassInstrumenter"))
+                .type(nameEndsWith("jacoco.core.internal.instr.ClassInstrumenter"))
                 .transform((b, t, cl, m, pd) -> b
                         .visit(Advice.to(VisitTotalProbeCountAdvice.class).on(named("visitTotalProbeCount"))))
                 .installOn(inst);
@@ -2479,6 +2508,6 @@ git commit -m "ci: weekly JaCoCo version canary running golden-equivalence matri
 5. **`manifest.json` assembly** — header at premain + per-test sidecars; full roll-up is a read-time scan (a consumer like TIA does it). Not on the v1 critical path.
 6. **TTL eviction** (spec §7.4) — v1 implements the store **cap**; time-based TTL deferred to phase 2 (recorded so it is not silently dropped).
 
-**Placeholder scan:** no TBD/TODO; every code step carries complete code. Task 11's advice/bridge is **verbatim from the passing `spike/`**; the only non-validated piece is the standard agent plumbing (`ClassFileTransformer` + `ModifiedSystemClassRuntime`), exercised by the Task 15 e2e.
+**Placeholder scan:** no TBD/TODO; every code step carries complete code. Task 11's advice/bridge is **verbatim from the passing `spike/`**; the only non-validated piece is the standard agent plumbing (`ClassFileTransformer` + `LoggerRuntime` + warm-up), exercised by the Task 15 e2e.
 
 **Type consistency:** `CoverageBridge.recordCoverage(Class, long, int)` + `setTotalProbeCount(String, int)` identical across Tasks 7, 11, 12, 17. `TestStore.record(long, String, int, int)`, `snapshot()`, `classCount()`, `retryCount()` consistent across Tasks 2, 4, 6, 7. `CoverageContext` holds `TestStore` across Tasks 1, 7, 10, 16. `TestStoreRegistry(Path, ExecWriter, Metrics, AgentLog, boolean, int, LongSupplier)` identical across Tasks 6, 8, 10, 14; `.active(testId)` used at activation (Task 10), stop (Task 6), control (Task 8). `ExecWriter.write(...)` 6-arg + 5-arg overloads consistent across Tasks 4, 6.

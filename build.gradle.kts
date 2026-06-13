@@ -32,9 +32,12 @@ tasks.test { useJUnitPlatform() }
 
 tasks.shadowJar {
     archiveFileName.set("jacocoagent-parallel.jar")
-    // v1: fat jar without relocation. Single-agent deployment means no clash with a separately
-    // attached jacoco; keeping packages unrelocated lets the ByteBuddy hook target the plain
-    // org.jacoco.core.internal.instr.* names (matching the validated spike).
+    // Self-contained agent (spec §3): relocate the embedded jacoco-core + byte-buddy so the agent
+    // cannot clash with the same libraries on the target app's classpath. The jacoco-internal hook
+    // matchers use suffix matching (nameEndsWith) so they resolve the relocated classes here AND the
+    // un-relocated ones used by the in-process integration tests.
+    relocate("org.jacoco", "io.pjacoco.shaded.jacoco")
+    relocate("net.bytebuddy", "io.pjacoco.shaded.bytebuddy")
     manifest {
         attributes(
             "Premain-Class" to "io.pjacoco.agent.Bootstrap",
