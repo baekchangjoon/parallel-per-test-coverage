@@ -110,6 +110,51 @@ val e2eTest = tasks.register<Test>("e2eTest") {
     environment("PJACOCO_COMMIT", "e2e-deadbeef")
 }
 
+// ---- e2eJakarta source set: real-agent e2e against the jakarta.servlet stack (Servlet 5+, Jetty 11) ----
+// Kept separate from integrationTest because jakarta Jetty 11 and javax Jetty 9.4 share the
+// org.eclipse.jetty.* package and cannot coexist on one classpath. Reuses the integrationTest
+// TargetService (the instrumented SUT) via its compiled output.
+val e2eJakartaSrc = sourceSets.create("e2eJakarta") {
+    java.srcDir("src/e2eJakarta/java")
+    compileClasspath += sourceSets["main"].output + sourceSets["integrationTest"].output
+    runtimeClasspath += sourceSets["main"].output + sourceSets["integrationTest"].output
+}
+val e2eJakartaImplementation by configurations.getting {
+    extendsFrom(configurations.testImplementation.get())
+}
+@Suppress("UNUSED_VARIABLE")
+val e2eJakartaRuntimeOnly by configurations.getting {
+    extendsFrom(configurations.testRuntimeOnly.get())
+}
+dependencies {
+    "e2eJakartaImplementation"("jakarta.servlet:jakarta.servlet-api:5.0.0")
+    "e2eJakartaImplementation"("org.eclipse.jetty:jetty-server:11.0.20")
+    "e2eJakartaImplementation"("org.eclipse.jetty:jetty-servlet:11.0.20")
+}
+// SUT class (SampleServletJakarta) compiled to Java 8 bytecode — same probe-strategy reason as integrationTest.
+tasks.named<JavaCompile>("compileE2eJakartaJava") {
+    options.release.set(8)
+}
+// End-to-end on the jakarta stack: own control port (6311) and output dir so it runs beside e2eTest.
+val e2eJakartaTest = tasks.register<Test>("e2eJakartaTest") {
+    description = "End-to-end spec acceptance on the jakarta.servlet stack with the real -javaagent attached"
+    group = "verification"
+    testClassesDirs = e2eJakartaSrc.output.classesDirs
+    classpath = e2eJakartaSrc.runtimeClasspath
+    useJUnitPlatform()
+    outputs.upToDateWhen { false }
+    dependsOn(tasks.shadowJar)
+    val agentJar = layout.buildDirectory.file("libs/jacocoagent-parallel.jar")
+    doFirst {
+        jvmArgs(
+            "-javaagent:${agentJar.get().asFile.absolutePath}=destfile=build/coverage-jakarta,port=6311,includes=com.example.app.TargetService",
+            "-DPJACOCO_E2E_OUTPUT=build/coverage-jakarta"
+        )
+    }
+    environment("PJACOCO_COMMIT", "e2e-jakarta-deadbeef")
+    extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension::class.java).isEnabled = false
+}
+
 tasks.named("check") { dependsOn(integrationTest) }
 
 // ---- self-coverage of the agent (io.pjacoco.agent.*) by the in-process suites ----
