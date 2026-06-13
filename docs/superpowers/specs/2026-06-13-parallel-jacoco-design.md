@@ -27,7 +27,7 @@
 | v1 범위 | **동기 수직 슬라이스** | 비동기 전파는 phase 2 |
 | 정밀도 | **라인 수준 = 바닐라 JaCoCo 동일**, testId별 분리 | |
 | 출력 | testId별 `.exec` + 사이드카 `<testId>.json` + 조립형 `manifest.json` | |
-| testId 소스 | 인입 요청의 **Baggage 헤더** (`baggage: test.id=...`) | |
+| testId 소스 | 인입 요청의 **OTel Baggage** (W3C `baggage` 헤더, `baggage: test.id=...`) | OpenTelemetry Baggage 전파 규약 사용 — 표준 OTel SDK/계측이 자동 전파 |
 | flush 경계 | **명시적 제어 엔드포인트** (test start/stop) | |
 | 계측 메커니즘 | **JaCoCo 후킹** (D3, Datadog per-probe 브리지 패턴, Apache 2.0 레퍼런스) | |
 | 인입 가로채기 | **플러그가능 SPI**, v1 = 서블릿 필터 구현 | |
@@ -60,7 +60,7 @@
 | `CoverageContext` (ThreadLocal) | 현 스레드의 활성 testId 보유. 없으면 untagged(미기록) | — |
 | `TestStore` | 한 testId의 누적 커버리지 `ConcurrentHashMap<classId, boolean[]>` | — |
 | `TestStoreRegistry` | testId → TestStore. start에서 생성, stop에서 flush·제거. 상한·TTL 가드 | `ExecWriter` |
-| `InboundActivator` (SPI) | 인입 요청에서 Baggage `test.id` 추출 → `CoverageContext` 활성화/해제 | `CoverageContext` |
+| `InboundActivator` (SPI) | 인입 요청에서 **OTel Baggage**(`baggage` 헤더)의 `test.id` 추출 → `CoverageContext` 활성화/해제 | `CoverageContext` |
 | `ServletFilterActivator` | `InboundActivator`의 v1 서블릿 구현 | Servlet API |
 | `ControlEndpoint` | `POST /__coverage__/test/start\|stop`. loopback 기본 바인딩 | `TestStoreRegistry` |
 | `ExecWriter` | TestStore → `<testId>.exec` + `<testId>.json` 사이드카 | jacoco-core |
@@ -91,9 +91,13 @@
 
 ### 4.2 요청 생명주기 (데이터 평면)
 
+testId는 **OpenTelemetry Baggage**(W3C `baggage` 헤더)로 전파된다. 테스트 하니스가
+요청 컨텍스트에 `test.id`를 Baggage로 심으면 표준 OTel 전파가 인입 요청 헤더까지 실어
+나르고, `ServletFilterActivator`가 이를 읽는다.
+
 ```
-1. 요청 도착, 헤더에 baggage: test.id=T1
-2. ServletFilterActivator: baggage 파싱 → CoverageContext.set(T1)   [현 스레드]
+1. 요청 도착, OTel Baggage 헤더: baggage: test.id=T1
+2. ServletFilterActivator: baggage 헤더 파싱 → test.id 추출 → CoverageContext.set(T1)   [현 스레드]
 3. 핸들러 실행 → 계측된 클래스의 프로브 발화
 4. ProbeRouter: 발화마다 CoverageContext.get() 확인
      - T1 활성  → T1 스토어의 (classId→boolean[])에 기록
