@@ -1,0 +1,67 @@
+name: ci
+
+# Run the full test suite (unit + in-process integration + real-agent e2e) and measure coverage
+# on every PR to main and on every push/merge to main.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Run all tests + coverage
+        run: ./gradlew --no-daemon test integrationTest e2eTest jacocoTestReport
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          REPORT=build/reports/jacoco/test/jacocoTestReport.xml
+          {
+            echo "## Test results & coverage"
+            echo ""
+            echo "Suites: unit (\`test\`) + in-process (\`integrationTest\`) + real-agent e2e (\`e2eTest\`)."
+            if [ -f "$REPORT" ]; then
+              line=$(grep -oE '<counter type="LINE"[^/]*/>' "$REPORT" | tail -1)
+              missed=$(echo "$line" | grep -oE 'missed="[0-9]+"' | grep -oE '[0-9]+')
+              covered=$(echo "$line" | grep -oE 'covered="[0-9]+"' | grep -oE '[0-9]+')
+              total=$((missed + covered))
+              pct=$(awk "BEGIN { if ($total > 0) printf \"%.1f\", 100 * $covered / $total; else print 0 }")
+              echo ""
+              echo "Agent line coverage (\`io.pjacoco.agent.*\`, from unit + in-process suites): **${pct}%** (${covered}/${total} lines)."
+              echo ""
+              echo "> e2e runs the shaded agent in a forked JVM and is excluded from self-coverage; it still gates CI."
+            else
+              echo ""
+              echo "_Coverage report not produced (a test task likely failed before \`jacocoTestReport\`)._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test & coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            build/reports/tests/
+            build/reports/jacoco/
+          if-no-files-found: ignore
+          retention-days: 14

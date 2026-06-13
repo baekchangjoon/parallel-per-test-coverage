@@ -1,7 +1,10 @@
 plugins {
     java
+    jacoco
     id("com.gradleup.shadow") version "8.3.5"
 }
+
+jacoco { toolVersion = "0.8.12" }
 
 group = "io.pjacoco"   // NOT org.jacoco — that namespace belongs to the JaCoCo project
 version = "0.1.0"
@@ -108,3 +111,21 @@ val e2eTest = tasks.register<Test>("e2eTest") {
 }
 
 tasks.named("check") { dependsOn(integrationTest) }
+
+// ---- self-coverage of the agent (io.pjacoco.agent.*) by the in-process suites ----
+// The e2e runs the SHADED agent in a forked JVM: self-coverage attribution is messy and it would
+// double-instrument the SUT, so jacoco is disabled there (the e2e still runs in CI). Coverage is
+// measured from `test` (unit) + `integrationTest` (in-process mechanism).
+e2eTest.configure {
+    extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension::class.java).isEnabled = false
+}
+
+tasks.named<org.gradle.testing.jacoco.tasks.JacocoReport>("jacocoTestReport") {
+    dependsOn(tasks.named("test"), integrationTest)
+    executionData(tasks.named<Test>("test").get(), integrationTest.get())
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+    }
+}
