@@ -103,6 +103,46 @@ coverage/
   manifest.json  # global header: schemaVersion, jacocoVersion, commitSha, precision (once, at premain)
 ```
 
+## Example: per-test coverage of a parallel black-box suite — spring-petclinic (Spring Boot 4 / jakarta)
+
+A full walkthrough of attaching this agent to
+[spring-petclinic](https://github.com/baekchangjoon/spring-petclinic)'s `@Tag("blackbox")` out-of-process
+REST Assured suite (run in parallel) to get **one `.exec` per test case**. Assumes both repos are cloned
+as siblings under one parent directory.
+
+```bash
+# Run from the directory that contains both clones (siblings).
+
+# 1) Build the coverage agent (JDK 17+ to run Gradle; the jar itself targets Java 8).
+( cd parallel-per-test-coverage && JAVA_HOME=<jdk17+> ./gradlew shadowJar )
+#   → parallel-per-test-coverage/build/libs/jacocoagent-parallel.jar
+
+# 2) Build spring-petclinic from source, then start it with the agent attached.
+#    includes = the app's packages; the Spring Boot 4 jakarta.servlet / Tomcat 11 stack is supported.
+( cd spring-petclinic && ./gradlew bootJar )
+java -javaagent:"$PWD/parallel-per-test-coverage/build/libs/jacocoagent-parallel.jar=destfile=/tmp/petclinic-coverage,port=6310,includes=org.springframework.samples.petclinic.*" \
+     -jar "$PWD/spring-petclinic/build/libs/spring-petclinic-4.0.0-SNAPSHOT.jar"
+
+# 3) In another shell, run the parallel black-box suite with per-test coverage routing on.
+#    It activates only because -Dpjacoco.control-url is set (otherwise the suite runs unchanged).
+( cd spring-petclinic && ./gradlew blackboxTest \
+    -Dpetclinic.base-url=http://localhost:8080 \
+    -Dpjacoco.control-url=http://127.0.0.1:6310 )
+#   → /tmp/petclinic-coverage/<Class#method>.exec   (one vanilla-JaCoCo .exec per test case)
+
+# 4) Report any single test's coverage with standard jacoco tooling.
+#    jacococli = org.jacoco:org.jacoco.cli:0.8.12:nodeps (download from Maven Central).
+java -jar jacococli.jar report "/tmp/petclinic-coverage/OwnerApiBlackBoxIT#getOwnerById.exec" \
+    --classfiles spring-petclinic/build/classes/java/main \
+    --sourcefiles spring-petclinic/src/main/java \
+    --html /tmp/cov-OwnerGetById
+```
+
+> The app-side `test.id` propagation is done by petclinic's JUnit 5 extension `PerTestCoverageExtension`:
+> it calls the control endpoint around each test and stamps every request with a
+> `baggage: test.id=<Class#method>` header. Threads spawned by `ConcurrencyBlackBoxIT` inherit the same
+> `test.id` via an `InheritableThreadLocal`.
+
 ## Testing & verification
 
 This repo verifies itself rigorously; CI (`ci.yml`) runs everything on PRs and pushes to main.

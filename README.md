@@ -107,6 +107,44 @@ coverage/
   manifest.json  # 전역 헤더: schemaVersion·jacocoVersion·commitSha·precision (premain 1회)
 ```
 
+## 예시: 병렬 블랙박스 테스트의 per-test 커버리지 — spring-petclinic (Spring Boot 4 / jakarta)
+
+[spring-petclinic](https://github.com/baekchangjoon/spring-petclinic)의 `@Tag("blackbox")` out-of-process
+REST Assured 스위트(병렬 실행)에 이 에이전트를 붙여 **테스트케이스별 `.exec`** 를 얻는 전체 절차입니다.
+두 레포가 한 부모 디렉터리 아래 형제로 클론돼 있다고 가정합니다.
+
+```bash
+# 두 클론을 모두 담고 있는 디렉터리에서 실행.
+
+# 1) 커버리지 에이전트 빌드 (Gradle 실행에 JDK 17+; jar 산출물은 Java 8 호환).
+( cd parallel-per-test-coverage && JAVA_HOME=<jdk17+> ./gradlew shadowJar )
+#   → parallel-per-test-coverage/build/libs/jacocoagent-parallel.jar
+
+# 2) SUT(spring-petclinic)를 현재 소스로 빌드한 뒤, 에이전트를 붙여 기동.
+#    includes = 앱 패키지. Spring Boot 4 의 jakarta.servlet / Tomcat 11 스택 지원.
+( cd spring-petclinic && ./gradlew bootJar )
+java -javaagent:"$PWD/parallel-per-test-coverage/build/libs/jacocoagent-parallel.jar=destfile=/tmp/petclinic-coverage,port=6310,includes=org.springframework.samples.petclinic.*" \
+     -jar "$PWD/spring-petclinic/build/libs/spring-petclinic-4.0.0-SNAPSHOT.jar"
+
+# 3) (다른 셸에서) 병렬 블랙박스 스위트를 per-test 커버리지 라우팅과 함께 실행.
+#    -Dpjacoco.control-url 이 있을 때만 활성화됨(없으면 평소와 동일).
+( cd spring-petclinic && ./gradlew blackboxTest \
+    -Dpetclinic.base-url=http://localhost:8080 \
+    -Dpjacoco.control-url=http://127.0.0.1:6310 )
+#   → /tmp/petclinic-coverage/<클래스#메서드>.exec   (테스트케이스당 vanilla-JaCoCo .exec 1개)
+
+# 4) 임의 테스트의 .exec 를 표준 jacoco 도구로 리포트.
+#    jacococli = org.jacoco:org.jacoco.cli:0.8.12:nodeps (Maven Central에서 받기).
+java -jar jacococli.jar report "/tmp/petclinic-coverage/OwnerApiBlackBoxIT#getOwnerById.exec" \
+    --classfiles spring-petclinic/build/classes/java/main \
+    --sourcefiles spring-petclinic/src/main/java \
+    --html /tmp/cov-OwnerGetById
+```
+
+> 앱 쪽 `test.id` 전파는 petclinic의 JUnit 5 익스텐션 `PerTestCoverageExtension` 이 담당합니다: 각 테스트
+> 전후로 제어 엔드포인트를 호출하고, 모든 요청에 `baggage: test.id=<클래스#메서드>` 헤더를 붙입니다.
+> `ConcurrencyBlackBoxIT` 가 띄우는 스레드도 `InheritableThreadLocal` 로 같은 `test.id` 를 상속합니다.
+
 ## 테스트 & 검증
 
 이 저장소는 자체 검증을 매우 엄격히 합니다. CI(`ci.yml`)가 PR·main에서 전부 실행합니다.
