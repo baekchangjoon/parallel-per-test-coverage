@@ -1,6 +1,6 @@
 name: ci
 
-# Run the full test suite (unit + in-process integration + real-agent e2e) and measure coverage
+# Run the full test suite (unit + in-process integration + real-agent e2e: javax + jakarta) and measure coverage
 # on every PR to main and on every push/merge to main.
 on:
   pull_request:
@@ -29,7 +29,7 @@ jobs:
           cache: gradle
 
       - name: Run all tests + coverage
-        run: ./gradlew --no-daemon test integrationTest e2eTest jacocoTestReport
+        run: ./gradlew --no-daemon test integrationTest e2eTest e2eJakartaTest jacocoTestReport
 
       - name: Coverage summary
         if: always()
@@ -38,7 +38,7 @@ jobs:
           {
             echo "## Test results & coverage"
             echo ""
-            echo "Suites: unit (\`test\`) + in-process (\`integrationTest\`) + real-agent e2e (\`e2eTest\`)."
+            echo "Suites: unit (\`test\`) + in-process (\`integrationTest\`) + real-agent e2e (\`e2eTest\` javax + \`e2eJakartaTest\` jakarta)."
             if [ -f "$REPORT" ]; then
               line=$(grep -oE '<counter type="LINE"[^/]*/>' "$REPORT" | tail -1)
               missed=$(echo "$line" | grep -oE 'missed="[0-9]+"' | grep -oE '[0-9]+')
