@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
  * {@code $jacocoData} field), run it under an active context, assert the bridge captured probes.
  */
 class ProbeRoutingIT {
-    static final String NAME = "io.pjacoco.agent.it.TargetService";
+    static final String NAME = "com.example.app.TargetService";
 
     @Test
     void firedProbesLandInActiveStore() throws Exception {

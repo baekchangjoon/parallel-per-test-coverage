@@ -1,5 +1,6 @@
 package io.pjacoco.agent.it;
 
+import com.example.app.TargetService;
 import java.io.IOException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;

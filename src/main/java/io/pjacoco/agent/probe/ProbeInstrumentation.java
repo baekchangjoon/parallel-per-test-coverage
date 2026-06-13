@@ -30,6 +30,11 @@ public final class ProbeInstrumentation {
     public static void installHookOnly(Instrumentation inst) {
         new AgentBuilder.Default()
                 .disableClassFormatChanges()
+                // ProbeInserter can load as a side effect while ByteBuddy is mid-weaving ClassInstrumenter
+                // (same thread, circularity lock held) which would skip advising it. Disabling the lock is
+                // safe here because the advised classes (jacoco internals) never trigger our own
+                // instrumentation recursively.
+                .with(AgentBuilder.CircularityLock.Inactive.INSTANCE)
                 .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
                 .type(named("org.jacoco.core.internal.instr.ProbeInserter"))
                 .transform((b, t, cl, m, pd) -> b
@@ -51,7 +56,24 @@ public final class ProbeInstrumentation {
         runtime.startup(new RuntimeData());
 
         Instrumenter instrumenter = new Instrumenter(runtime);
+        // Force ProbeInserter to load + be advised now (clean context). If it first loads later inside
+        // our own transform(), ByteBuddy skips advising it and per-test routing silently no-ops.
+        warmUp(instrumenter);
         inst.addTransformer(new JacocoTransformer(instrumenter, options), false);
+    }
+
+    private static void warmUp(Instrumenter instrumenter) {
+        try {
+            java.io.InputStream in = ProbeInstrumentation.class.getResourceAsStream(
+                    "/io/pjacoco/agent/probe/WarmupTarget.class");
+            if (in == null) return;
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            in.close();
+            instrumenter.instrument(bos.toByteArray(), "io/pjacoco/agent/probe/WarmupTarget");
+        } catch (Throwable ignored) { /* warmup best-effort */ }
     }
 
     /** Instruments matching app classes with jacoco's Instrumenter. Never breaks class loading. */

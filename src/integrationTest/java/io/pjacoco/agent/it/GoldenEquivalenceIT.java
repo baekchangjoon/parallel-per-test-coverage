@@ -25,8 +25,8 @@ import org.junit.jupiter.api.Test;
 /** Keystone: in one instrument+run, our per-test probe array equals jacoco's own global array
  *  byte-for-byte (validated as the spike's {@code perTestProbesMatchVanillaJacoco}). */
 class GoldenEquivalenceIT {
-    static final String NAME = "io.pjacoco.agent.it.TargetService";
-    static final String VM_NAME = "io/pjacoco/agent/it/TargetService";
+    static final String NAME = "com.example.app.TargetService";
+    static final String VM_NAME = "com/example/app/TargetService";
 
     @Test
     void perTestProbesMatchVanillaJacoco() throws Exception {

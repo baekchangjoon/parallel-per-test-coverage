@@ -42,8 +42,8 @@ class SpecAcceptanceE2E {
 
     static final int CONTROL_PORT = 6310;
     static final Path COVERAGE = Paths.get("build/coverage");
-    static final String TARGET_VM = "io/pjacoco/agent/it/TargetService";
-    static final String TARGET_FQCN = "io.pjacoco.agent.it.TargetService";
+    static final String TARGET_VM = "com/example/app/TargetService";
+    static final String TARGET_FQCN = "com.example.app.TargetService";
 
     static Server server;
     static int appPort;

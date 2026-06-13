@@ -95,7 +95,7 @@ val e2eTest = tasks.register<Test>("e2eTest") {
     val agentJar = layout.buildDirectory.file("libs/jacocoagent-parallel.jar")
     doFirst {
         jvmArgs(
-            "-javaagent:${agentJar.get().asFile.absolutePath}=destfile=build/coverage,port=6310,includes=io.pjacoco.agent.it.TargetService",
+            "-javaagent:${agentJar.get().asFile.absolutePath}=destfile=build/coverage,port=6310,includes=com.example.app.TargetService",
             "-DPJACOCO_E2E_OUTPUT=build/coverage"
         )
     }
