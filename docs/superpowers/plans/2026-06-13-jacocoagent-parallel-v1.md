@@ -2,11 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> ## ⚠️ v2 — MECHANISM VALIDATED BY SPIKE (read first)
+> The M4 instrumentation hook is **no longer a research spike** — it has been validated end-to-end
+> in `spike/` (two passing tests: vanilla byte-equivalence + parallel isolation). The validated
+> mechanism, frozen interface, and integration-test pattern below **supersede the original prose**
+> wherever they differ. Key corrections baked into the tasks:
+> - **Frozen interface (corrected):** `CoverageBridge.recordCoverage(Class<?> clazz, long classId, int probeId)` (hot path) + `CoverageBridge.setTotalProbeCount(String className, int count)` (instrument time). The old 4-arg `ProbeRouter.record(classId, className, probeId, probeCount)` is **wrong** (probeCount is unknown at probe-firing time) and removed.
+> - **Mechanism:** embed jacoco-core; a `ClassFileTransformer` instruments app classes via jacoco's `Instrumenter`; ByteBuddy weaves **body-only** advice into jacoco's `ProbeInserter.insertProbe`/`visitMaxs` and `ClassInstrumenter.visitTotalProbeCount`. The validated source is in `spike/src/main/java/io/pjacoco/spike/` — port it.
+> - **Integration tests:** instrument into a fresh `MemoryClassLoader` (load-time, no schema-change problem). **Do NOT** apply jacoco instrumentation to already-loaded classes via `RedefinitionStrategy.RETRANSFORMATION` — JaCoCo adds a `$jacocoData` field and retransformation forbids adding fields (`UnsupportedOperationException: …change the schema`). The real-agent E2E asserts via `.exec` files only (never touches agent statics across the shaded/unshaded classloader split).
+> - `CoverageContext` holds the resolved **`TestStore` reference** (not a testId string); strict-mode rejection/counting happens once at request activation, not per probe.
+
 **Goal:** Build a single Java agent (`jacocoagent-parallel.jar`) that produces vanilla-JaCoCo-compatible `.exec` coverage output split per `testId`, for synchronous servlet apps under parallel test execution.
 
-**Architecture:** Out-of-process Java agent embedding jacoco-core. testId arrives per-request via OpenTelemetry Baggage (`baggage` header), is held in a ThreadLocal `CoverageContext`, and a probe-routing bridge records fired probes into a per-testId `TestStore`. A loopback HTTP control endpoint (`start`/`stop`) defines flush boundaries, emitting `<testId>.exec` + `<testId>.json` sidecars. Additive design: our code never touches the app's behavior and never crashes it.
+**Architecture:** Out-of-process Java agent embedding jacoco-core. App classes are instrumented by jacoco's `Instrumenter` inside our `ClassFileTransformer`; ByteBuddy body-only advice on jacoco's `ProbeInserter` makes each instrumented probe *additively* call `CoverageBridge.recordCoverage(...)`. testId arrives per-request via OpenTelemetry Baggage (`baggage` header) and is resolved to a `TestStore` held in a ThreadLocal `CoverageContext`. A loopback HTTP control endpoint (`start`/`stop`) defines flush boundaries, emitting `<testId>.exec` + `<testId>.json` sidecars. Additive design: our code never touches the app's behavior and never crashes it. **Validated in `spike/`.**
 
-**Tech Stack:** Java 8 (agent bytecode target), Gradle (Kotlin DSL) + Shadow plugin, jacoco-core 0.8.12, Byte Buddy 1.14.x, JDK `com.sun.net.httpserver` (control endpoint), JUnit 5, embedded Jetty 9.4 (javax.servlet) for integration tests.
+**Tech Stack:** Java 8 (agent bytecode target), Gradle (Kotlin DSL) + Shadow plugin, jacoco-core 0.8.12 (+ its transitive ASM, used by the advice), Byte Buddy 1.14.x + byte-buddy-agent, JDK `com.sun.net.httpserver` (control endpoint), JUnit 5, embedded Jetty 9.4 (javax.servlet) for integration tests. (Note: Gradle 9.x requires JDK 17+ to *run*; agent bytecode still targets 8 via toolchain.)
 
 ---
 
@@ -19,16 +29,19 @@ gradle/wrapper/...               Gradle wrapper
 src/main/java/io/pjacoco/agent/
   Bootstrap.java                 premain: parse opts, wire registry+router, install transforms, start control, shutdown hook
   AgentOptions.java              parse `-javaagent:...=k=v,k=v`, classify JaCoCo opts
-  context/CoverageContext.java   ThreadLocal<String> active testId
+  context/CoverageContext.java   ThreadLocal<TestStore> active store (resolved at request activation)
   store/TestStore.java           per-testId coverage: ConcurrentHashMap<Long, ClassProbes>
   store/ClassProbes.java         className + boolean[] for one class
   store/TestStoreRegistry.java   testId -> TestStore; start/stop; cap + TTL guard
-  probe/ProbeRouter.java         static record(classId, className, probeId, probeCount); reads context; swallows errors
-  probe/ProbeInstrumentation.java SPIKE: installs jacoco-based class instrumentation routed through ProbeRouter
+  probe/CoverageBridge.java      static recordCoverage(Class,classId,probeId) + setTotalProbeCount(name,count); hot path; swallows errors
+  probe/ProbeInstrumentation.java jacoco Instrumenter ClassFileTransformer + ByteBuddy advice on jacoco internals (ported from spike/)
+  probe/InsertProbeAdvice.java   body-only advice: emit additive recordCoverage call (ported from spike/)
+  probe/VisitMaxsAdvice.java     body-only advice: maxStack += 2 (ported from spike/)
+  probe/VisitTotalProbeCountAdvice.java  capture probe count per class (ported from spike/)
   inbound/InboundActivator.java  SPI: apply(AgentBuilder) -> AgentBuilder
   inbound/BaggageParser.java     parse W3C/OTel baggage header -> test.id
-  inbound/servlet/ServletInboundActivator.java   advises javax HttpServlet#service
-  inbound/servlet/ServletAdvice.java             @Advice enter/exit: set/clear context
+  inbound/servlet/ServletInboundActivator.java   advises javax HttpServlet#service (single choke point)
+  inbound/servlet/ServletAdvice.java             @Advice enter/exit: resolve store + set/clear context
   control/ControlEndpoint.java   HttpServer loopback; /__coverage__/test/start|stop
   output/ExecWriter.java         TestStore snapshot -> <id>.exec (jacoco) + <id>.json sidecar
   output/Json.java               tiny JSON string emitter (no dep)
@@ -43,17 +56,23 @@ src/integrationTest/java/io/pjacoco/agent/it/
   ThreadReuseIT.java             worker reuse -> no context leak
 ```
 
-**Interface contract that downstream tasks depend on (stable regardless of how the M4 spike resolves the hook):**
+**Interface contract that downstream tasks depend on (frozen, validated in `spike/`):**
 
 ```java
-// probe/ProbeRouter.java — the ONLY surface the instrumentation calls
-public final class ProbeRouter {
-    static void bind(TestStoreRegistry registry);            // set at Bootstrap
-    public static void record(long classId, String className, int probeId, int probeCount);
+// probe/CoverageBridge.java — the ONLY surface the instrumented bytecode calls
+public final class CoverageBridge {
+    public static void setTotalProbeCount(String className, int count); // instrument time (per class)
+    public static void recordCoverage(Class<?> clazz, long classId, int probeId); // hot path (per probe hit)
+    public static void clear();                                          // request exit
+    // request activation resolves a TestStore and binds it to CoverageContext (set once per request)
 }
 ```
 
-Everything except Milestone 4 depends only on `ProbeRouter.record(...)` and the registry/store/output types — not on how probes get instrumented.
+`recordCoverage` reads `CoverageContext.get()` (a `TestStore` or null) and, if non-null, calls
+`store.record(classId, className, probeId, totalProbeCount)` — looking up the count captured by
+`setTotalProbeCount`. The descriptor emitted by the advice is exactly `(Ljava/lang/Class;JI)V`, so
+the signature is **not** negotiable. Everything except Milestone 4 depends only on this surface and
+the registry/store/output types — not on how probes get instrumented.
 
 ---
 
@@ -188,11 +207,15 @@ git commit -m "build: gradle + shadow jar skeleton for jacocoagent-parallel"
 
 ## Milestone 1 — Context, store, output (no JaCoCo internals)
 
-### Task 1: CoverageContext (ThreadLocal active testId)
+### Task 1: CoverageContext (ThreadLocal active TestStore)
 
 **Files:**
 - Create: `src/main/java/io/pjacoco/agent/context/CoverageContext.java`
 - Test: `src/test/java/io/pjacoco/agent/context/CoverageContextTest.java`
+
+> **Ordering:** holds a `TestStore` (defined in Task 2). Implement Task 2 first, or the two together.
+> The store is resolved once per request by the inbound activator (Task 10), so the hot path never
+> hits the registry.
 
 - [ ] **Step 1: Write failing test**
 
@@ -200,6 +223,7 @@ git commit -m "build: gradle + shadow jar skeleton for jacocoagent-parallel"
 package io.pjacoco.agent.context;
 
 import org.junit.jupiter.api.Test;
+import io.pjacoco.agent.store.TestStore;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CoverageContextTest {
@@ -210,21 +234,23 @@ class CoverageContextTest {
 
     @Test
     void setAndClear() {
-        CoverageContext.set("T1");
-        assertEquals("T1", CoverageContext.get());
+        TestStore s = new TestStore("T1", 1L, null);
+        CoverageContext.set(s);
+        assertSame(s, CoverageContext.get());
         CoverageContext.clear();
         assertNull(CoverageContext.get());
     }
 
     @Test
     void isolatedPerThread() throws Exception {
-        CoverageContext.set("main-thread");
-        String[] seen = new String[1];
+        TestStore s = new TestStore("main-thread", 1L, null);
+        CoverageContext.set(s);
+        TestStore[] seen = new TestStore[1];
         Thread t = new Thread(() -> seen[0] = CoverageContext.get());
         t.start();
         t.join();
         assertNull(seen[0]);                       // child thread has no context (v1: no async propagation)
-        assertEquals("main-thread", CoverageContext.get());
+        assertSame(s, CoverageContext.get());
     }
 }
 ```
@@ -239,12 +265,14 @@ Expected: compilation failure (class missing).
 ```java
 package io.pjacoco.agent.context;
 
+import io.pjacoco.agent.store.TestStore;
+
 public final class CoverageContext {
-    private static final ThreadLocal<String> ACTIVE = new ThreadLocal<>();
+    private static final ThreadLocal<TestStore> ACTIVE = new ThreadLocal<>();
     private CoverageContext() {}
 
-    public static void set(String testId) { ACTIVE.set(testId); }
-    public static String get() { return ACTIVE.get(); }
+    public static void set(TestStore store) { ACTIVE.set(store); }
+    public static TestStore get() { return ACTIVE.get(); }
     public static void clear() { ACTIVE.remove(); }
 }
 ```
@@ -258,7 +286,7 @@ Expected: PASS.
 
 ```bash
 git add src/main/java/io/pjacoco/agent/context src/test/java/io/pjacoco/agent/context
-git commit -m "feat: CoverageContext thread-local active testId"
+git commit -m "feat: CoverageContext thread-local active TestStore"
 ```
 
 ### Task 2: ClassProbes + TestStore
@@ -917,11 +945,15 @@ git add src/main/java/io/pjacoco/agent/store/TestStoreRegistry.java src/test/jav
 git commit -m "feat: TestStoreRegistry lifecycle (strict/lenient, retry, cap, partial dump)"
 ```
 
-### Task 7: ProbeRouter (the stable instrumentation surface)
+### Task 7: CoverageBridge (the stable instrumentation surface)
 
 **Files:**
-- Create: `src/main/java/io/pjacoco/agent/probe/ProbeRouter.java`
-- Test: `src/test/java/io/pjacoco/agent/probe/ProbeRouterTest.java`
+- Create: `src/main/java/io/pjacoco/agent/probe/CoverageBridge.java`
+- Test: `src/test/java/io/pjacoco/agent/probe/CoverageBridgeTest.java`
+
+> Validated equivalent: `spike/src/main/java/io/pjacoco/spike/CoverageBridge.java`. The bridge does
+> NOT touch the registry — `CoverageContext` already holds the resolved `TestStore` (set by the
+> inbound activator at request activation, Task 10). Strict-mode rejection is the activator's job.
 
 - [ ] **Step 1: Write failing test**
 
@@ -929,56 +961,43 @@ git commit -m "feat: TestStoreRegistry lifecycle (strict/lenient, retry, cap, pa
 package io.pjacoco.agent.probe;
 
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.io.TempDir;
 import io.pjacoco.agent.context.CoverageContext;
-import io.pjacoco.agent.observability.*;
-import io.pjacoco.agent.output.ExecWriter;
-import io.pjacoco.agent.store.TestStoreRegistry;
+import io.pjacoco.agent.store.TestStore;
 
-import java.nio.file.Path;
-import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.jupiter.api.Assertions.*;
 
-class ProbeRouterTest {
+class CoverageBridgeTest {
     @AfterEach void clear() { CoverageContext.clear(); }
 
-    private TestStoreRegistry reg(Path dir) {
-        AtomicLong clock = new AtomicLong(1L);
-        return new TestStoreRegistry(dir, new ExecWriter(), new Metrics(), new AgentLog(),
-                false, 100, clock::get);
+    @Test
+    void recordsIntoActiveStoreSizedByProbeCount() {
+        TestStore store = new TestStore("T1", 1L, null);
+        CoverageBridge.setTotalProbeCount("java/lang/String", 3);
+        CoverageContext.set(store);
+
+        CoverageBridge.recordCoverage(String.class, 42L, 1);
+
+        assertEquals(1, store.classCount());
+        assertArrayEquals(new boolean[]{false, true, false}, store.snapshot().get(42L).probes());
     }
 
     @Test
-    void recordsIntoActiveTestStore(@TempDir Path dir) {
-        TestStoreRegistry r = reg(dir);
-        r.start("T1", null, "sha");
-        ProbeRouter.bind(r);
-        CoverageContext.set("T1");
-        ProbeRouter.record(7L, "com/x/Y", 1, 2);
-        assertEquals(1, r.active("T1").classCount());
+    void noContextIsNoOp() {
+        CoverageBridge.recordCoverage(String.class, 42L, 1); // no active store -> must not throw
     }
 
     @Test
-    void noContextIsNoOp(@TempDir Path dir) {
-        TestStoreRegistry r = reg(dir);
-        ProbeRouter.bind(r);
-        // no context set
-        ProbeRouter.record(7L, "com/x/Y", 1, 2);   // must not throw
-    }
-
-    @Test
-    void unregisteredStrictIsNoOp(@TempDir Path dir) {
-        TestStoreRegistry r = reg(dir);
-        ProbeRouter.bind(r);
-        CoverageContext.set("GHOST");
-        ProbeRouter.record(7L, "com/x/Y", 1, 2);   // strict -> dropped, no throw
+    void neverThrowsOnBadInput() {
+        CoverageContext.set(new TestStore("T1", 1L, null));
+        // unknown class -> fallback count = probeId+1; out-of-range handled in TestStore
+        assertDoesNotThrow(() -> CoverageBridge.recordCoverage(String.class, 7L, 4));
     }
 }
 ```
 
 - [ ] **Step 2: Run, expect FAIL**
 
-Run: `./gradlew test --tests '*ProbeRouterTest'`
+Run: `./gradlew test --tests '*CoverageBridgeTest'`
 Expected: compilation failure.
 
 - [ ] **Step 3: Implement**
@@ -989,45 +1008,52 @@ package io.pjacoco.agent.probe;
 import io.pjacoco.agent.context.CoverageContext;
 import io.pjacoco.agent.observability.Metrics;
 import io.pjacoco.agent.store.TestStore;
-import io.pjacoco.agent.store.TestStoreRegistry;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-public final class ProbeRouter {
-    private static volatile TestStoreRegistry registry;
+/** The surface instrumented bytecode calls. Signature is fixed by the emitted descriptor
+ *  {@code (Ljava/lang/Class;JI)V}; do not change it. Ported/validated in spike/. */
+public final class CoverageBridge {
+    private static final Map<String, Integer> PROBE_COUNTS = new ConcurrentHashMap<String, Integer>();
     private static volatile Metrics metrics;
-    private ProbeRouter() {}
+    private CoverageBridge() {}
 
-    public static void bind(TestStoreRegistry r) { registry = r; }
     public static void bindMetrics(Metrics m) { metrics = m; }
 
-    /** Hot path. MUST NEVER throw into application code. */
-    public static void record(long classId, String className, int probeId, int probeCount) {
+    /** Instrument time: authoritative probe count per class (VM/slash name). */
+    public static void setTotalProbeCount(String className, int count) {
+        PROBE_COUNTS.put(className, count);
+    }
+
+    /** Hot path (per probe hit). MUST be cheap and MUST NEVER throw into application code. */
+    public static void recordCoverage(Class<?> clazz, long classId, int probeId) {
         try {
-            String testId = CoverageContext.get();
-            if (testId == null) return;                  // untagged traffic
-            TestStoreRegistry r = registry;
-            if (r == null) return;
-            TestStore store = r.active(testId);
-            if (store == null) return;                   // strict: unregistered
-            store.record(classId, className, probeId, probeCount);
+            TestStore store = CoverageContext.get();
+            if (store == null) return;                       // untagged / unregistered (resolved at activation)
+            String name = clazz.getName().replace('.', '/');
+            Integer count = PROBE_COUNTS.get(name);
+            store.record(classId, name, probeId, count != null ? count.intValue() : probeId + 1);
         } catch (Throwable t) {
             Metrics m = metrics;
             if (m != null) m.swallowedExceptions.incrementAndGet();
             // swallow: coverage loss is acceptable, an app crash is not
         }
     }
+
+    public static void clear() { CoverageContext.clear(); }
 }
 ```
 
 - [ ] **Step 4: Run, expect PASS**
 
-Run: `./gradlew test --tests '*ProbeRouterTest'`
+Run: `./gradlew test --tests '*CoverageBridgeTest'`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/main/java/io/pjacoco/agent/probe/ProbeRouter.java src/test/java/io/pjacoco/agent/probe/ProbeRouterTest.java
-git commit -m "feat: ProbeRouter stable instrumentation surface, error-swallowing hot path"
+git add src/main/java/io/pjacoco/agent/probe/CoverageBridge.java src/test/java/io/pjacoco/agent/probe/CoverageBridgeTest.java
+git commit -m "feat: CoverageBridge — stable per-probe instrumentation surface, error-swallowing hot path"
 ```
 
 ### Task 8: ControlEndpoint (HttpServer start/stop)
@@ -1290,7 +1316,18 @@ git commit -m "feat: OTel/W3C baggage header parser for test.id"
 - Create: `src/main/java/io/pjacoco/agent/inbound/servlet/ServletInboundActivator.java`
 - Test: `src/test/java/io/pjacoco/agent/inbound/servlet/ServletAdviceTest.java`
 
-The activator advises `javax.servlet.http.HttpServlet#service(ServletRequest, ServletResponse)` so it needs no cooperation from the app (no filter registration). On enter it reads the `baggage` header and sets the context; on exit it clears. `ServletAdvice` logic is extracted into a plain static method (`activate`/`deactivate`) so it is unit-testable without bytecode weaving.
+The activator advises `javax.servlet.http.HttpServlet#service(ServletRequest, ServletResponse)` (a
+**single choke point** — no filter registration needed). On enter it parses the `baggage` header,
+**resolves the `TestStore` from the registry once** (strict: reject+count if unregistered; lenient:
+lazy-create) and sets `CoverageContext` to that store; on exit it clears. `ServletAdvice.activate`/
+`deactivate` are plain static methods so they're unit-testable without weaving.
+
+> **S6 (nesting):** match only the 2-arg public `service(ServletRequest,ServletResponse)`. Frameworks
+> typically override `service(HttpServletRequest,HttpServletResponse)` (different descriptor) or
+> `doGet`/`doPost`, so this matches a single declaration per request. If a container is found to
+> double-invoke, add a depth-counter guard so only the outermost enter sets and the outermost exit
+> clears. Do **not** match across the whole hierarchy with `isSubTypeOf(...).and(named("service"))`
+> alone, which can advise parent+child and let an inner exit clear the context early.
 
 - [ ] **Step 1: Write failing test** (tests the extracted logic directly)
 
@@ -1298,35 +1335,58 @@ The activator advises `javax.servlet.http.HttpServlet#service(ServletRequest, Se
 package io.pjacoco.agent.inbound.servlet;
 
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
 import io.pjacoco.agent.context.CoverageContext;
+import io.pjacoco.agent.observability.*;
+import io.pjacoco.agent.output.ExecWriter;
+import io.pjacoco.agent.store.TestStore;
+import io.pjacoco.agent.store.TestStoreRegistry;
 import javax.servlet.http.HttpServletRequest;
+import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;   // add testImplementation mockito if not present
 
 class ServletAdviceTest {
-    @AfterEach void clear() { CoverageContext.clear(); }
+    @AfterEach void clear() { CoverageContext.clear(); ServletAdvice.registry = null; }
+
+    private TestStoreRegistry reg(Path dir, boolean lenient) {
+        AtomicLong clock = new AtomicLong(1L);
+        return new TestStoreRegistry(dir, new ExecWriter(), new Metrics(), new AgentLog(),
+                lenient, 100, clock::get);
+    }
 
     @Test
-    void activatesFromBaggageHeader() {
+    void activatesResolvedStoreFromBaggage(@TempDir Path dir) {
+        TestStoreRegistry r = reg(dir, false);
+        r.start("T1", null, "sha");
+        ServletAdvice.registry = r;
         HttpServletRequest req = mock(HttpServletRequest.class);
         when(req.getHeader("baggage")).thenReturn("test.id=T1");
+
         ServletAdvice.activate(req);
-        assertEquals("T1", CoverageContext.get());
+        assertSame(r.active("T1"), CoverageContext.get());   // context holds the resolved store
         ServletAdvice.deactivate();
         assertNull(CoverageContext.get());
     }
 
     @Test
-    void noHeaderLeavesContextUnset() {
+    void strictUnregisteredLeavesContextUnset(@TempDir Path dir) {
+        ServletAdvice.registry = reg(dir, false);            // strict, T1 not started
         HttpServletRequest req = mock(HttpServletRequest.class);
-        when(req.getHeader("baggage")).thenReturn(null);
+        when(req.getHeader("baggage")).thenReturn("test.id=GHOST");
         ServletAdvice.activate(req);
         assertNull(CoverageContext.get());
     }
 
     @Test
-    void nonHttpRequestIgnored() {
-        ServletAdvice.activate(new Object());      // not an HttpServletRequest
+    void noHeaderOrNonHttpIgnored(@TempDir Path dir) {
+        ServletAdvice.registry = reg(dir, false);
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        when(req.getHeader("baggage")).thenReturn(null);
+        ServletAdvice.activate(req);
+        assertNull(CoverageContext.get());
+        ServletAdvice.activate(new Object());                // not an HttpServletRequest
         assertNull(CoverageContext.get());
     }
 }
@@ -1348,34 +1408,42 @@ Expected: compilation failure.
 ```java
 package io.pjacoco.agent.inbound;
 
-import net.bytebuddy.agent.builder.AgentBuilder;
+import java.lang.instrument.Instrumentation;
 
 /** Strategy for activating CoverageContext from an inbound request, per transport. */
 public interface InboundActivator {
-    /** Register this activator's transformation onto the Byte Buddy agent builder. */
-    AgentBuilder apply(AgentBuilder builder);
+    /** Install this activator's instrumentation (its own body-only ByteBuddy advice). */
+    void install(Instrumentation inst);
 }
 ```
 
-- [ ] **Step 4: Implement `ServletAdvice` (testable logic + @Advice hooks)**
+- [ ] **Step 4: Implement `ServletAdvice` (resolves the store; testable logic + @Advice hooks)**
 
 ```java
 package io.pjacoco.agent.inbound.servlet;
 
 import io.pjacoco.agent.context.CoverageContext;
 import io.pjacoco.agent.inbound.BaggageParser;
+import io.pjacoco.agent.store.TestStore;
+import io.pjacoco.agent.store.TestStoreRegistry;
 import net.bytebuddy.asm.Advice;
 import javax.servlet.http.HttpServletRequest;
 
 public final class ServletAdvice {
+    /** Bound once by ServletInboundActivator; read by the woven advice. */
+    public static volatile TestStoreRegistry registry;
+
     private ServletAdvice() {}
 
-    /** Extracted for unit testing. Accepts Object so a non-HTTP request is a safe no-op. */
+    /** Per request (once): resolve the store and bind it to the context. Never disturbs the app. */
     public static void activate(Object request) {
         try {
-            if (request instanceof HttpServletRequest) {
+            if (request instanceof HttpServletRequest && registry != null) {
                 String testId = BaggageParser.testId(((HttpServletRequest) request).getHeader("baggage"));
-                if (testId != null) CoverageContext.set(testId);
+                if (testId != null) {
+                    TestStore store = registry.active(testId); // strict: null+count once; lenient: create
+                    if (store != null) CoverageContext.set(store);
+                }
             }
         } catch (Throwable ignored) { /* never disturb the app */ }
     }
@@ -1398,20 +1466,33 @@ public final class ServletAdvice {
 package io.pjacoco.agent.inbound.servlet;
 
 import io.pjacoco.agent.inbound.InboundActivator;
+import io.pjacoco.agent.observability.AgentLog;
+import io.pjacoco.agent.observability.Metrics;
+import io.pjacoco.agent.store.TestStoreRegistry;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.asm.Advice;
+import java.lang.instrument.Instrumentation;
 import static net.bytebuddy.matcher.ElementMatchers.*;
 
 public final class ServletInboundActivator implements InboundActivator {
+    public ServletInboundActivator(TestStoreRegistry registry, Metrics metrics, AgentLog log) {
+        ServletAdvice.registry = registry;   // bind the static the woven advice reads
+    }
+
     @Override
-    public AgentBuilder apply(AgentBuilder builder) {
-        return builder
+    public void install(Instrumentation inst) {
+        new AgentBuilder.Default()
+            .disableClassFormatChanges()                    // body-only advice: no member changes
+            .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
+            .ignore(nameStartsWith("net.bytebuddy."))
             .type(isSubTypeOf(named("javax.servlet.http.HttpServlet")))
             .transform((b, type, cl, module, pd) -> b.visit(
                 Advice.to(ServletAdvice.class).on(
-                    named("service")
+                    named("service")                        // single 2-arg public choke point
+                        .and(takesArguments(2))
                         .and(takesArgument(0, named("javax.servlet.ServletRequest")))
-                        .and(takesArgument(1, named("javax.servlet.ServletResponse"))))));
+                        .and(takesArgument(1, named("javax.servlet.ServletResponse"))))))
+            .installOn(inst);
     }
 }
 ```
@@ -1425,259 +1506,272 @@ Expected: PASS.
 
 ```bash
 git add src/main/java/io/pjacoco/agent/inbound src/test/java/io/pjacoco/agent/inbound/servlet
-git commit -m "feat: InboundActivator SPI + servlet activator (advises HttpServlet#service)"
+git commit -m "feat: InboundActivator SPI + servlet activator (resolves store at single choke point)"
 ```
 
 ---
 
-## Milestone 4 — Probe instrumentation (SPIKE: the JaCoCo hook)
+## Milestone 4 — Probe instrumentation (VALIDATED in `spike/`)
 
-> **This is the spec's top risk (§7 of the design: hooking JaCoCo internals is version-fragile).**
-> Unlike the deterministic milestones above, the exact bytecode hook MUST be derived against
-> live source, not written from memory. Treat this milestone as a **time-boxed spike with a
-> binary acceptance test**: when `GoldenEquivalenceIT` (Task 12) passes, the hook is correct.
-> Downstream code depends ONLY on `ProbeRouter.record(...)` (Task 7), which is already frozen.
+> **No longer a research spike.** The hard part — vanilla-identical per-test probe routing — is
+> proven end-to-end in `spike/` (tests `perTestProbesMatchVanillaJacoco` + `parallelContextsAreIsolated`).
+> This milestone **ports** that validated code into the agent and adds the standard agent plumbing
+> (a `ClassFileTransformer` + a jacoco `IRuntime`). The advice/bridge below is copied verbatim from
+> `spike/src/main/java/io/pjacoco/spike/` (only the package changes).
+>
+> **Coupling surface guarded by the version canary (Task 18):** `ProbeInserter.insertProbe(int)`,
+> `ProbeInserter.visitMaxs(int,int)`, the inherited `mv` field + `arrayStrategy` field;
+> `ClassFieldProbeArrayStrategy.className`/`classId`; `ClassInstrumenter.visitTotalProbeCount(int)` +
+> its `className` field. All in our **embedded, version-pinned** jacoco-core (clean
+> `org.jacoco.core.internal.instr.*` package — no relocation/MethodHandle gymnastics needed).
 
-**Reference sources to read first (do not skip):**
-- jacoco-core `org.jacoco.core.instr.Instrumenter`, `org.jacoco.core.runtime.IRuntime` /
-  `IExecutionDataAccessorGenerator`, and `org.jacoco.core.internal.instr.*` (probe insertion).
-- Datadog `dd-trace-java` civisibility coverage module: `ProbeInserterInstrumentation` and
-  `CoveragePerTestBridge` (Apache 2.0) — the working reference for intercepting probe firings
-  and routing `(classId, probeId)` to a per-context store.
-
-### Task 11: ProbeInstrumentation — route jacoco probes into ProbeRouter
+### Task 11: Port validated advice + ProbeInstrumentation (hook + transformer + runtime)
 
 **Files:**
-- Create: `src/main/java/io/pjacoco/agent/probe/ProbeInstrumentation.java`
-- Test (spike acceptance): `src/integrationTest/java/io/pjacoco/agent/it/TargetService.java`
-- Test (spike acceptance): `src/integrationTest/java/io/pjacoco/agent/it/ProbeRoutingIT.java`
+- Create: `src/main/java/io/pjacoco/agent/probe/InsertProbeAdvice.java`  (verbatim from spike)
+- Create: `src/main/java/io/pjacoco/agent/probe/VisitMaxsAdvice.java`     (verbatim from spike)
+- Create: `src/main/java/io/pjacoco/agent/probe/VisitTotalProbeCountAdvice.java` (verbatim from spike)
+- Create: `src/main/java/io/pjacoco/agent/probe/ProbeInstrumentation.java` (new: hook install + transformer + runtime)
+- Test: `src/integrationTest/java/io/pjacoco/agent/it/TargetService.java`
+- Test: `src/integrationTest/java/io/pjacoco/agent/it/ProbeRoutingIT.java`
 
-**Contract `ProbeInstrumentation` must satisfy (stable; the spike chooses HOW):**
+Add to `build.gradle.kts` dependencies:
+```kotlin
+    implementation("net.bytebuddy:byte-buddy-agent:1.14.18")   // self-attach for in-process ITs
+```
+Integration-test JVM needs self-attach: add `jvmArgs("-Djdk.attach.allowAttachSelf=true")` to the
+`integrationTest` task (Task 0).
+
+- [ ] **Step 1: Port the three advice classes (verbatim from `spike/`, package `io.pjacoco.agent.probe`)**
+
+```java
+// InsertProbeAdvice.java — woven into jacoco's ProbeInserter.insertProbe(int) (instrument time).
+package io.pjacoco.agent.probe;
+
+import java.lang.reflect.Field;
+import net.bytebuddy.asm.Advice;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
+
+public class InsertProbeAdvice {
+    @Advice.OnMethodExit(suppress = Throwable.class)
+    static void exit(
+            @Advice.FieldValue("mv") MethodVisitor mv,
+            @Advice.FieldValue("arrayStrategy") Object arrayStrategy,
+            @Advice.Argument(0) int id)
+            throws Exception {
+        Field classNameField = arrayStrategy.getClass().getDeclaredField("className");
+        classNameField.setAccessible(true);
+        String className = (String) classNameField.get(arrayStrategy);
+
+        Field classIdField = arrayStrategy.getClass().getDeclaredField("classId");
+        classIdField.setAccessible(true);
+        long classId = classIdField.getLong(arrayStrategy);
+
+        mv.visitLdcInsn(Type.getType("L" + className + ";"));
+        mv.visitLdcInsn(Long.valueOf(classId));
+        mv.visitLdcInsn(Integer.valueOf(id));
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC,
+                "io/pjacoco/agent/probe/CoverageBridge", "recordCoverage",
+                "(Ljava/lang/Class;JI)V", false);
+    }
+}
+```
+```java
+// VisitMaxsAdvice.java — woven into ProbeInserter.visitMaxs(int,int).
+package io.pjacoco.agent.probe;
+
+import net.bytebuddy.asm.Advice;
+
+public class VisitMaxsAdvice {
+    @Advice.OnMethodEnter(suppress = Throwable.class)
+    static void enter(@Advice.Argument(value = 0, readOnly = false) int maxStack) {
+        maxStack = maxStack + 2;   // jacoco already +3; our Class+long+int call needs a touch more
+    }
+}
+```
+```java
+// VisitTotalProbeCountAdvice.java — woven into ClassInstrumenter.visitTotalProbeCount(int).
+package io.pjacoco.agent.probe;
+
+import net.bytebuddy.asm.Advice;
+
+public class VisitTotalProbeCountAdvice {
+    @Advice.OnMethodEnter(suppress = Throwable.class)
+    static void enter(@Advice.FieldValue("className") String className, @Advice.Argument(0) int count) {
+        CoverageBridge.setTotalProbeCount(className, count);
+    }
+}
+```
+
+> **Note (descriptor):** `InsertProbeAdvice` emits `INVOKESTATIC io/pjacoco/agent/probe/CoverageBridge.recordCoverage (Ljava/lang/Class;JI)V`.
+> This is why `CoverageBridge.recordCoverage(Class,long,int)` (Task 7) is immutable.
+
+- [ ] **Step 2: Implement `ProbeInstrumentation`** (the new agent-side plumbing)
 
 ```java
 package io.pjacoco.agent.probe;
 
-import net.bytebuddy.agent.builder.AgentBuilder;
+import static net.bytebuddy.matcher.ElementMatchers.named;
 
-/**
- * Installs class instrumentation such that, when an instrumented method runs and a probe fires,
- * ProbeRouter.record(classId, className, probeId, probeCount) is invoked with the SAME classId
- * and probe scheme that vanilla JaCoCo would assign (so emitted .exec is byte-compatible).
- *
- * Honors AgentOptions includes/excludes/exclclassloader/inclbootstrapclasses/inclnolocationclasses.
- */
+import io.pjacoco.agent.AgentOptions;
+import java.lang.instrument.ClassFileTransformer;
+import java.lang.instrument.Instrumentation;
+import java.security.ProtectionDomain;
+import net.bytebuddy.agent.builder.AgentBuilder;
+import net.bytebuddy.asm.Advice;
+import org.jacoco.core.instr.Instrumenter;
+import org.jacoco.core.runtime.IRuntime;
+import org.jacoco.core.runtime.ModifiedSystemClassRuntime;
+import org.jacoco.core.runtime.RuntimeData;
+import org.jacoco.core.runtime.WildcardMatcher;
+
 public final class ProbeInstrumentation {
-    public static AgentBuilder install(AgentBuilder builder, io.pjacoco.agent.AgentOptions options) { /* spike */ }
+    private ProbeInstrumentation() {}
+
+    /**
+     * 1) Weaves body-only advice into our embedded jacoco internals (additive recordCoverage).
+     * 2) Starts a jacoco IRuntime so instrumented classes' $jacocoInit resolves.
+     * 3) Registers a ClassFileTransformer that instruments app classes with jacoco's Instrumenter.
+     */
+    public static void install(Instrumentation inst, AgentOptions options) throws Exception {
+        // (1) body-only advice on jacoco internals — disableClassFormatChanges() is correct here.
+        new AgentBuilder.Default()
+                .disableClassFormatChanges()
+                .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
+                .type(named("org.jacoco.core.internal.instr.ProbeInserter"))
+                .transform((b, t, cl, m, pd) -> b
+                        .visit(Advice.to(VisitMaxsAdvice.class).on(named("visitMaxs")))
+                        .visit(Advice.to(InsertProbeAdvice.class).on(named("insertProbe"))))
+                .type(named("org.jacoco.core.internal.instr.ClassInstrumenter"))
+                .transform((b, t, cl, m, pd) -> b
+                        .visit(Advice.to(VisitTotalProbeCountAdvice.class).on(named("visitTotalProbeCount"))))
+                .installOn(inst);
+
+        // (2) jacoco runtime (production choice: inject into a system class, like the real jacoco agent).
+        IRuntime runtime = ModifiedSystemClassRuntime.createFor(inst, "java/lang/UnknownError");
+        runtime.startup(new RuntimeData());
+
+        // (3) instrument app classes via jacoco — yields vanilla-identical classId + probe scheme.
+        Instrumenter instrumenter = new Instrumenter(runtime);
+        inst.addTransformer(new JacocoTransformer(instrumenter, options), false);
+    }
+
+    /** Instruments matching app classes with jacoco's Instrumenter. Never breaks class loading. */
+    static final class JacocoTransformer implements ClassFileTransformer {
+        private final Instrumenter instrumenter;
+        private final WildcardMatcher includes;
+        private final WildcardMatcher excludes;
+
+        JacocoTransformer(Instrumenter instrumenter, AgentOptions options) {
+            this.instrumenter = instrumenter;
+            this.includes = new WildcardMatcher(options.includes());   // default "*"
+            this.excludes = new WildcardMatcher(options.excludes());   // default ""
+        }
+
+        @Override
+        public byte[] transform(ClassLoader loader, String vmName, Class<?> beingRedefined,
+                                ProtectionDomain pd, byte[] buffer) {
+            if (vmName == null || beingRedefined != null) return null;   // first load only
+            String dotted = vmName.replace('/', '.');
+            if (dotted.startsWith("io.pjacoco.") || dotted.startsWith("org.jacoco.")
+                    || dotted.startsWith("net.bytebuddy.") || dotted.startsWith("org.objectweb.asm.")) {
+                return null;                                             // never instrument self/embedded libs
+            }
+            if (!includes.matches(dotted) || excludes.matches(dotted)) return null;
+            int major = ((buffer[6] & 0xFF) << 8) | (buffer[7] & 0xFF);
+            if (major < 49) return null;                                 // Java <1.5: cannot push Type constants
+            try {
+                return instrumenter.instrument(buffer, vmName);
+            } catch (Throwable t) {
+                return null;                                             // coverage loss >> breaking the app
+            }
+        }
+    }
 }
 ```
 
-**Recommended approach (Datadog-style per-probe bridge):** let jacoco-core's `Instrumenter`
-instrument classes so classId + probe scheme are vanilla-identical, and intercept probe firing
-to also call `ProbeRouter.record`. The global jacoco array is left intact (additive). Probe
-`probeCount` per class comes from the instrumented class metadata; `classId` is jacoco's CRC64
-of the original class bytes (`org.jacoco.core.internal.data.CRC64`), `className` is the VM name.
+> **What's validated vs new:** the advice + bridge + per-test routing (the hard, version-fragile
+> part) is **validated by `spike/`**. The `ClassFileTransformer` + `ModifiedSystemClassRuntime`
+> wiring is *standard jacoco-agent plumbing* (jacoco's own agent does exactly this) — lower risk,
+> but confirm `ModifiedSystemClassRuntime.createFor(...)` works under the real `-javaagent` in
+> Task 15. `WildcardMatcher` / `ModifiedSystemClassRuntime` are public jacoco-core API.
 
-- [ ] **Step 1: Write the spike acceptance target class**
+- [ ] **Step 3: Port `TargetService` + write the in-process acceptance IT (`ProbeRoutingIT`)**
+
+`TargetService` (compile the integrationTest source set with `options.release = 8` so jacoco uses
+the field strategy, mirroring the spike — add `tasks.named<JavaCompile>("compileIntegrationTestJava") { options.release = 8 }`):
 
 ```java
 package io.pjacoco.agent.it;
 
 public class TargetService {
     public int classify(int n) {
-        if (n < 0) return -1;        // branch A
-        if (n == 0) return 0;        // branch B
-        return 1;                    // branch C
+        if (n < 0) { return -1; }
+        if (n == 0) { return 0; }
+        return 1;
     }
     public String greet(boolean formal) {
-        return formal ? "Good day" : "hi";
+        if (formal) { return "Good day"; }
+        return "hi";
     }
 }
 ```
 
-- [ ] **Step 2: Write the spike acceptance test (`ProbeRoutingIT`)**
-
-This runs in-process: install instrumentation, set context, exercise the target, assert the
-active store captured probes for `TargetService`. (Golden equivalence vs vanilla is Task 12.)
+`ProbeRoutingIT` — instruments into a fresh `MemoryClassLoader` (load-time; **no retransformation
+of already-loaded classes**, which would fail with `class redefinition … change the schema` because
+jacoco adds the `$jacocoData` field). This mirrors the validated spike exactly:
 
 ```java
 package io.pjacoco.agent.it;
 
-import org.junit.jupiter.api.*;
+import org.jacoco.core.instr.Instrumenter;
+import org.jacoco.core.runtime.IRuntime;
+import org.jacoco.core.runtime.LoggerRuntime;
+import org.jacoco.core.runtime.RuntimeData;
+import org.junit.jupiter.api.Test;
 import io.pjacoco.agent.context.CoverageContext;
-import io.pjacoco.agent.observability.*;
-import io.pjacoco.agent.output.ExecWriter;
-import io.pjacoco.agent.probe.*;
-import io.pjacoco.agent.store.TestStoreRegistry;
+import io.pjacoco.agent.probe.CoverageBridge;
+import io.pjacoco.agent.probe.ProbeInstrumentation;
+import io.pjacoco.agent.store.TestStore;
 import net.bytebuddy.agent.ByteBuddyAgent;
-import net.bytebuddy.agent.builder.AgentBuilder;
 
-import java.nio.file.Path;
-import java.util.concurrent.atomic.AtomicLong;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ProbeRoutingIT {
-    @Test
-    void firedProbesLandInActiveStore(@TempDir Path dir) throws Exception {
-        AtomicLong clock = new AtomicLong(1L);
-        TestStoreRegistry reg = new TestStoreRegistry(dir, new ExecWriter(), new Metrics(),
-                new AgentLog(), false, 100, clock::get);
-        ProbeRouter.bind(reg);
-
-        AgentBuilder ab = new AgentBuilder.Default()
-            .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-            .type(net.bytebuddy.matcher.ElementMatchers.named("io.pjacoco.agent.it.TargetService"));
-        // install our instrumentation and apply to the live JVM
-        ProbeInstrumentation.install(ab, io.pjacoco.agent.AgentOptions.empty())
-            .installOn(ByteBuddyAgent.install());
-
-        reg.start("T1", null, "sha");
-        CoverageContext.set("T1");
-        new TargetService().classify(5);          // exercises branch C path
-        CoverageContext.clear();
-
-        // TargetService must appear with at least one fired probe
-        assertTrue(reg.active("T1").classCount() >= 1,
-            "instrumentation did not route any probe for TargetService");
-    }
-}
-```
-
-Add to `build.gradle.kts`:
-```kotlin
-    integrationTestImplementation("net.bytebuddy:byte-buddy-agent:1.14.18")
-```
-
-- [ ] **Step 3: Run, expect FAIL**
-
-Run: `./gradlew integrationTest --tests '*ProbeRoutingIT'`
-Expected: FAIL (instrumentation not implemented / no probes routed).
-
-- [ ] **Step 4: Implement `ProbeInstrumentation` (derive from references in Step header)**
-
-Implement the recommended approach until Step 3's test passes. Keep ALL coverage-routing
-bytecode calling only `ProbeRouter.record(...)`. Do not change `ProbeRouter`'s signature.
-Record the chosen hook point and the exact jacoco-core classes touched in a comment block at
-the top of the file (this is what the version canary in Task 15 guards).
-
-- [ ] **Step 5: Run, expect PASS**
-
-Run: `./gradlew integrationTest --tests '*ProbeRoutingIT'`
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/main/java/io/pjacoco/agent/probe/ProbeInstrumentation.java src/integrationTest/java/io/pjacoco/agent/it/TargetService.java src/integrationTest/java/io/pjacoco/agent/it/ProbeRoutingIT.java build.gradle.kts
-git commit -m "feat: probe instrumentation routes jacoco probes to per-testId store (spike)"
-```
-
-### Task 12: GoldenEquivalenceIT — our .exec == vanilla jacoco .exec
-
-**Files:**
-- Test: `src/integrationTest/java/io/pjacoco/agent/it/GoldenEquivalenceIT.java`
-
-**Goal:** prove "vanilla identical" — for a single test exercising `TargetService`, the set of
-covered probes our agent records equals what the official jacoco agent records.
-
-- [ ] **Step 1: Write the test**
-
-```java
-package io.pjacoco.agent.it;
-
-import org.jacoco.core.analysis.*;
-import org.jacoco.core.data.*;
-import org.jacoco.core.instr.Instrumenter;
-import org.jacoco.core.runtime.*;
-import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.io.TempDir;
-import io.pjacoco.agent.context.CoverageContext;
-import io.pjacoco.agent.observability.*;
-import io.pjacoco.agent.output.ExecWriter;
-import io.pjacoco.agent.probe.*;
-import io.pjacoco.agent.store.TestStoreRegistry;
-import net.bytebuddy.agent.ByteBuddyAgent;
-import net.bytebuddy.agent.builder.AgentBuilder;
-
-import java.io.*;
-import java.nio.file.*;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicLong;
-import static org.junit.jupiter.api.Assertions.*;
-
-class GoldenEquivalenceIT {
-
-    /** Returns covered-line set for TargetService from a given .exec, via JaCoCo analysis. */
-    private SortedSet<Integer> coveredLines(Path exec, byte[] classBytes) throws Exception {
-        ExecutionDataStore eds = new ExecutionDataStore();
-        SessionInfoStore sis = new SessionInfoStore();
-        try (InputStream in = Files.newInputStream(exec)) {
-            ExecutionDataReader r = new ExecutionDataReader(in);
-            r.setExecutionDataVisitor(eds);
-            r.setSessionInfoVisitor(sis);
-            r.read();
-        }
-        CoverageBuilder cb = new CoverageBuilder();
-        new Analyzer(eds, cb).analyzeClass(classBytes, "io/pjacoco/agent/it/TargetService");
-        SortedSet<Integer> lines = new TreeSet<>();
-        for (IClassCoverage c : cb.getClasses()) {
-            for (int l = c.getFirstLine(); l <= c.getLastLine(); l++) {
-                if (c.getLine(l).getStatus() == ICounter.FULLY_COVERED
-                        || c.getLine(l).getStatus() == ICounter.PARTLY_COVERED) {
-                    lines.add(l);
-                }
-            }
-        }
-        return lines;
-    }
+    static final String NAME = "io.pjacoco.agent.it.TargetService";
 
     @Test
-    void ourExecMatchesVanilla(@TempDir Path dir) throws Exception {
-        byte[] original = readClassBytes("io.pjacoco.agent.it.TargetService");
+    void firedProbesLandInActiveStore() throws Exception {
+        // install only the body-only advice on jacoco internals (no transformer needed for in-process)
+        ProbeInstrumentation.installHookOnly(ByteBuddyAgent.install());
 
-        // ---- Vanilla JaCoCo path (offline instrumentation into an isolated classloader) ----
+        byte[] original = readBytes(NAME);
         IRuntime runtime = new LoggerRuntime();
-        RuntimeData data = new RuntimeData();
-        runtime.startup(data);
-        Instrumenter instr = new Instrumenter(runtime);
-        byte[] instrumented = instr.instrument(original, "TargetService");
-        MemoryClassLoader mcl = new MemoryClassLoader();
-        mcl.addDefinition("io.pjacoco.agent.it.TargetService", instrumented);
-        Class<?> vanillaTarget = mcl.loadClass("io.pjacoco.agent.it.TargetService");
-        vanillaTarget.getMethod("classify", int.class).invoke(vanillaTarget.newInstance(), 5);
-        ExecutionDataStore vanillaStore = new ExecutionDataStore();
-        data.collect(vanillaStore, new SessionInfoStore(), false);
-        runtime.shutdown();
-        Path vanillaExec = dir.resolve("vanilla.exec");
-        try (OutputStream os = Files.newOutputStream(vanillaExec)) {
-            ExecutionDataWriter w = new ExecutionDataWriter(os);
-            vanillaStore.accept(w);
-        }
+        Instrumenter instrumenter = new Instrumenter(runtime);
+        byte[] instrumented = instrumenter.instrument(original, NAME);
+        runtime.startup(new RuntimeData());
 
-        // ---- Our agent path (same scenario) ----
-        AtomicLong clock = new AtomicLong(1L);
-        TestStoreRegistry reg = new TestStoreRegistry(dir, new ExecWriter(), new Metrics(),
-                new AgentLog(), false, 100, clock::get);
-        ProbeRouter.bind(reg);
-        AgentBuilder ab = new AgentBuilder.Default()
-            .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
-            .type(net.bytebuddy.matcher.ElementMatchers.named("io.pjacoco.agent.it.TargetService"));
-        ProbeInstrumentation.install(ab, io.pjacoco.agent.AgentOptions.empty())
-            .installOn(ByteBuddyAgent.install());
-        reg.start("T1", null, "sha");
-        CoverageContext.set("T1");
-        new TargetService().classify(5);
+        MemoryClassLoader loader = new MemoryClassLoader();
+        loader.add(NAME, instrumented);
+        Class<?> target = loader.loadClass(NAME);
+
+        TestStore store = new TestStore("T1", 1L, null);
+        CoverageContext.set(store);
+        target.getMethod("classify", int.class).invoke(target.getDeclaredConstructor().newInstance(), 5);
         CoverageContext.clear();
-        reg.stop("T1", "passed");
-        Path ourExec = dir.resolve("T1.exec");
 
-        // ---- Compare covered lines ----
-        assertEquals(coveredLines(vanillaExec, original), coveredLines(ourExec, original),
-            "per-test .exec must cover the same lines as vanilla JaCoCo");
+        assertTrue(store.classCount() >= 1, "instrumentation did not route any probe for TargetService");
     }
 
-    private static byte[] readClassBytes(String fqcn) throws IOException {
-        try (InputStream in = GoldenEquivalenceIT.class.getClassLoader()
-                .getResourceAsStream(fqcn.replace('.', '/') + ".class")) {
+    static byte[] readBytes(String fqcn) throws Exception {
+        try (InputStream in = ProbeRoutingIT.class.getResourceAsStream("/" + fqcn.replace('.', '/') + ".class")) {
+            assertNotNull(in);
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             byte[] buf = new byte[8192]; int n;
             while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
@@ -1687,7 +1781,8 @@ class GoldenEquivalenceIT {
 
     static final class MemoryClassLoader extends ClassLoader {
         private final Map<String, byte[]> defs = new HashMap<>();
-        void addDefinition(String name, byte[] bytes) { defs.put(name, bytes); }
+        MemoryClassLoader() { super(ProbeRoutingIT.class.getClassLoader()); }
+        void add(String name, byte[] bytes) { defs.put(name, bytes); }
         @Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
             byte[] b = defs.get(name);
             if (b != null) {
@@ -1702,16 +1797,133 @@ class GoldenEquivalenceIT {
 }
 ```
 
-- [ ] **Step 2: Run, expect PASS** (if it fails, the M4 spike hook is not yet vanilla-faithful — iterate Task 11)
+Add `ProbeInstrumentation.installHookOnly(Instrumentation)` — the advice-install half of `install(...)`
+(factor it out of Step 2 so the in-process ITs can use it without the transformer/runtime):
 
-Run: `./gradlew integrationTest --tests '*GoldenEquivalenceIT'`
-Expected: PASS.
+```java
+    public static void installHookOnly(Instrumentation inst) {
+        new AgentBuilder.Default()
+                .disableClassFormatChanges()
+                .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
+                .type(named("org.jacoco.core.internal.instr.ProbeInserter"))
+                .transform((b, t, cl, m, pd) -> b
+                        .visit(Advice.to(VisitMaxsAdvice.class).on(named("visitMaxs")))
+                        .visit(Advice.to(InsertProbeAdvice.class).on(named("insertProbe"))))
+                .type(named("org.jacoco.core.internal.instr.ClassInstrumenter"))
+                .transform((b, t, cl, m, pd) -> b
+                        .visit(Advice.to(VisitTotalProbeCountAdvice.class).on(named("visitTotalProbeCount"))))
+                .installOn(inst);
+    }
+```
+(Have `install(...)` call `installHookOnly(inst)` then do the runtime + transformer steps.)
+
+- [ ] **Step 4: Run, expect PASS**
+
+Run: `JAVA_HOME=<jdk17> ./gradlew integrationTest --tests '*ProbeRoutingIT'`
+Expected: PASS (mirrors spike `perTestProbesMatchVanillaJacoco`).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/main/java/io/pjacoco/agent/probe/ src/integrationTest/java/io/pjacoco/agent/it/TargetService.java src/integrationTest/java/io/pjacoco/agent/it/ProbeRoutingIT.java build.gradle.kts
+git commit -m "feat: port validated probe-routing (advice+bridge) + jacoco transformer"
+```
+
+### Task 12: GoldenEquivalenceIT — per-test probes byte-identical to vanilla jacoco
+
+**Files:**
+- Test: `src/integrationTest/java/io/pjacoco/agent/it/GoldenEquivalenceIT.java`
+
+**Goal:** prove "vanilla identical" — in a single instrument+run, the probe array our bridge records
+equals jacoco's own global array byte-for-byte (validated as `perTestProbesMatchVanillaJacoco` in
+`spike/`). Port that test, adapting package names.
+
+- [ ] **Step 1: Write the test (port from `spike/src/test/java/io/pjacoco/spike/SpikeMechanismTest.java`)**
+
+```java
+package io.pjacoco.agent.it;
+
+import org.jacoco.core.analysis.*;
+import org.jacoco.core.data.*;
+import org.jacoco.core.instr.Instrumenter;
+import org.jacoco.core.runtime.*;
+import org.junit.jupiter.api.Test;
+import io.pjacoco.agent.context.CoverageContext;
+import io.pjacoco.agent.probe.CoverageBridge;
+import io.pjacoco.agent.probe.ProbeInstrumentation;
+import io.pjacoco.agent.store.TestStore;
+import net.bytebuddy.agent.ByteBuddyAgent;
+
+import java.util.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+class GoldenEquivalenceIT {
+    static final String NAME = "io.pjacoco.agent.it.TargetService";
+    static final String VM_NAME = "io/pjacoco/agent/it/TargetService";
+
+    @Test
+    void perTestProbesMatchVanillaJacoco() throws Exception {
+        ProbeInstrumentation.installHookOnly(ByteBuddyAgent.install());
+
+        byte[] original = ProbeRoutingIT.readBytes(NAME);
+        IRuntime runtime = new LoggerRuntime();
+        Instrumenter instrumenter = new Instrumenter(runtime);
+        byte[] instrumented = instrumenter.instrument(original, NAME);
+        RuntimeData data = new RuntimeData();
+        runtime.startup(data);
+
+        ProbeRoutingIT.MemoryClassLoader loader = new ProbeRoutingIT.MemoryClassLoader();
+        loader.add(NAME, instrumented);
+        Class<?> target = loader.loadClass(NAME);
+
+        TestStore store = new TestStore("T1", 1L, null);
+        CoverageContext.set(store);
+        target.getMethod("classify", int.class).invoke(target.getDeclaredConstructor().newInstance(), 5);
+        CoverageContext.clear();
+
+        ExecutionDataStore vanilla = new ExecutionDataStore();
+        data.collect(vanilla, new SessionInfoStore(), false);
+        runtime.shutdown();
+
+        assertEquals(1, vanilla.getContents().size());
+        ExecutionData vanillaEd = vanilla.getContents().iterator().next();
+        long classId = vanillaEd.getId();
+        boolean[] vanillaProbes = vanillaEd.getProbes();
+        boolean[] ourProbes = store.snapshot().get(classId).probes();
+
+        // KEYSTONE: byte-identical to vanilla jacoco.
+        assertArrayEquals(vanillaProbes, ourProbes);
+
+        // bonus: covered lines agree through jacoco's Analyzer
+        ExecutionDataStore ourStore = new ExecutionDataStore();
+        ourStore.put(new ExecutionData(classId, VM_NAME, ourProbes));
+        assertEquals(coveredLines(original, vanilla), coveredLines(original, ourStore));
+    }
+
+    private static SortedSet<Integer> coveredLines(byte[] original, ExecutionDataStore store) throws Exception {
+        CoverageBuilder cb = new CoverageBuilder();
+        new Analyzer(store, cb).analyzeClass(original, NAME);
+        SortedSet<Integer> lines = new TreeSet<>();
+        for (IClassCoverage c : cb.getClasses())
+            for (int l = c.getFirstLine(); l <= c.getLastLine(); l++) {
+                int s = c.getLine(l).getStatus();
+                if (s == ICounter.FULLY_COVERED || s == ICounter.PARTLY_COVERED) lines.add(l);
+            }
+        return lines;
+    }
+}
+```
+
+- [ ] **Step 2: Run, expect PASS**
+
+Run: `JAVA_HOME=<jdk17> ./gradlew integrationTest --tests '*GoldenEquivalenceIT'`
+Expected: PASS (matches spike: `assertArrayEquals(vanillaProbes, ourProbes)`).
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add src/integrationTest/java/io/pjacoco/agent/it/GoldenEquivalenceIT.java
-git commit -m "test: golden equivalence — per-test .exec matches vanilla jacoco coverage"
+git commit -m "test: golden equivalence — per-test probes byte-identical to vanilla jacoco"
 ```
 
 ---
@@ -1835,18 +2047,20 @@ import io.pjacoco.agent.inbound.servlet.ServletInboundActivator;
 import io.pjacoco.agent.observability.AgentLog;
 import io.pjacoco.agent.observability.Metrics;
 import io.pjacoco.agent.output.ExecWriter;
+import io.pjacoco.agent.output.Json;
+import io.pjacoco.agent.probe.CoverageBridge;
 import io.pjacoco.agent.probe.ProbeInstrumentation;
-import io.pjacoco.agent.probe.ProbeRouter;
 import io.pjacoco.agent.store.TestStoreRegistry;
-import net.bytebuddy.agent.builder.AgentBuilder;
 
 import java.lang.instrument.Instrumentation;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public final class Bootstrap {
     private Bootstrap() {}
 
-    public static void premain(String args, Instrumentation inst) {
+    public static void premain(String args, Instrumentation inst) throws Exception {
         AgentOptions options = AgentOptions.parse(args);
         Metrics metrics = new Metrics();
         AgentLog log = new AgentLog();
@@ -1854,14 +2068,27 @@ public final class Bootstrap {
         String commitSha = options.commitSha() != null ? options.commitSha()
                 : System.getenv("PJACOCO_COMMIT");
 
+        Path outDir = Paths.get(options.outputDir());
         TestStoreRegistry registry = new TestStoreRegistry(
-                Paths.get(options.outputDir()), new ExecWriter(), metrics, log,
+                outDir, new ExecWriter(), metrics, log,
                 options.lenient(), options.maxStores(), System::currentTimeMillis);
-        if (commitSha != null) registry.start("__bootstrap_commit__", null, commitSha); // seed commitSha then drop
-        registry.stop("__bootstrap_commit__", null);
 
-        ProbeRouter.bind(registry);
-        ProbeRouter.bindMetrics(metrics);
+        // Global meta header, written ONCE at startup — persists commitSha with no per-stop contention
+        // (replaces the old __bootstrap_commit__ hack, which created a junk T=__bootstrap_commit__.exec).
+        try {
+            Files.createDirectories(outDir);
+            String header = new Json()
+                    .put("schemaVersion", 1)
+                    .put("jacocoVersion", "0.8.12")
+                    .put("commitSha", commitSha)        // null -> omitted
+                    .put("precision", "line")
+                    .toString();
+            Files.write(outDir.resolve("manifest.json"), header.getBytes("UTF-8"));
+        } catch (Exception e) {
+            log.warn("manifest", "could not write manifest header: " + e);
+        }
+
+        CoverageBridge.bindMetrics(metrics);
 
         try {
             ControlEndpoint endpoint = new ControlEndpoint(registry, options.controlHost(), options.controlPort());
@@ -1876,12 +2103,11 @@ public final class Bootstrap {
             log.warn("control", "failed to start control endpoint: " + e);
         }
 
-        AgentBuilder builder = new AgentBuilder.Default()
-                .disableClassFormatChanges()
-                .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION);
-        builder = new ServletInboundActivator().apply(builder);
-        builder = ProbeInstrumentation.install(builder, options);
-        builder.installOn(inst);
+        // Probe instrumentation: jacoco-internal body-only advice + jacoco Instrumenter transformer + runtime.
+        ProbeInstrumentation.install(inst, options);
+
+        // Inbound activation: resolve TestStore from the registry per request, set/clear CoverageContext.
+        new ServletInboundActivator(registry, metrics, log).install(inst);
 
         log.info("agent installed (output=" + options.outputDir()
                 + ", mode=" + (options.lenient() ? "lenient" : "strict") + ")");
@@ -1889,10 +2115,13 @@ public final class Bootstrap {
 }
 ```
 
-> Note: the `__bootstrap_commit__` seed is a deliberately ugly way to pass commitSha into the
-> registry without widening its constructor. If the implementer prefers, add a
-> `registry.setCommitSha(String)` method instead and call it here — either is acceptable, but
-> keep `TestStoreRegistry`'s existing test signatures unchanged.
+> **Corrections baked in (S1/S4):** (a) no `__bootstrap_commit__` — commitSha is persisted by the
+> manifest header above; (b) `ProbeInstrumentation.install(inst, options)` owns its own AgentBuilder
+> (body-only advice with `disableClassFormatChanges()`) **and** the jacoco `Instrumenter`
+> ClassFileTransformer — Bootstrap no longer builds a shared AgentBuilder, so the earlier
+> contradiction (member-adding probe instrumentation under `disableClassFormatChanges()`) is gone;
+> (c) the inbound activator installs its own body-only advice and is given the registry so it can
+> resolve the store at activation.
 
 - [ ] **Step 2: Build the agent jar**
 
@@ -1942,25 +2171,44 @@ public class SampleServlet extends HttpServlet {
 
 - [ ] **Step 2: Write `ParallelIsolationIT`**
 
+> **C2 — run this in its OWN task with the real `-javaagent`, separate from the in-process ITs.**
+> The mechanism ITs (Task 11/12) do manual in-process instrumentation; this E2E uses the real
+> premain agent. They MUST NOT share a JVM, or `TargetService` gets instrumented twice. Define a
+> dedicated `e2eTest` task that (a) `dependsOn(shadowJar)`, (b) attaches the agent, (c) does NOT add
+> `-Djdk.attach.allowAttachSelf` and never calls `ByteBuddyAgent.install()`. This IT asserts **only
+> via the `.exec` files on disk** — it never touches agent statics (which live in the shaded jar's
+> classloader, distinct from the test classpath copies).
+
 ```java
 package io.pjacoco.agent.it;
 
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.servlet.*;
+import org.eclipse.jetty.servlet.ServletHandler;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.io.TempDir;
+import org.jacoco.core.analysis.*;
+import org.jacoco.core.data.*;
 
+import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.file.*;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ParallelIsolationIT {
     static Server server;
     static int appPort;
     static final int CONTROL_PORT = 6310;
+    static final Path COVERAGE = Paths.get("coverage");
 
     @BeforeAll static void startApp() throws Exception {
+        if (Files.isDirectory(COVERAGE)) {           // clean prior run
+            try (java.util.stream.Stream<Path> s = Files.list(COVERAGE)) {
+                for (Path p : (Iterable<Path>) s::iterator) Files.deleteIfExists(p);
+            }
+        }
         server = new Server(0);
         ServletHandler h = new ServletHandler();
         h.addServletWithMapping(SampleServlet.class, "/run");
@@ -1989,7 +2237,6 @@ class ParallelIsolationIT {
 
     @Test
     void interleavedTestsDoNotContaminate() throws Exception {
-        // T_NEG only ever hits the negative branch; T_POS only the positive branch
         control("/__coverage__/test/start?testId=T_NEG");
         control("/__coverage__/test/start?testId=T_POS");
         appRequest("T_NEG", "negative");
@@ -1998,59 +2245,60 @@ class ParallelIsolationIT {
         control("/__coverage__/test/stop?testId=T_NEG&result=passed");
         control("/__coverage__/test/stop?testId=T_POS&result=passed");
 
-        Path dir = Paths.get("coverage");           // default output dir, app CWD
-        assertTrue(Files.exists(dir.resolve("T_NEG.exec")));
-        assertTrue(Files.exists(dir.resolve("T_POS.exec")));
+        assertTrue(Files.exists(COVERAGE.resolve("T_NEG.exec")));
+        assertTrue(Files.exists(COVERAGE.resolve("T_POS.exec")));
 
-        // Covered lines differ: T_NEG must include the negative-branch return line,
-        // T_POS must include the positive-branch return line, and they must not be equal.
-        byte[] cls = GoldenEquivalenceIT.class.getClassLoader()
-            .getResourceAsStream("io/pjacoco/agent/it/TargetService.class") != null
-            ? readTargetBytes() : null;
-        assertNotNull(cls, "TargetService bytes available");
-        var neg = new GoldenEquivalenceIT();          // reuse coveredLines helper (make it package-visible)
-        // (If reuse is awkward, inline the same Analyzer-based coveredLines helper here.)
-        assertNotEquals(
-            negCovered(dir.resolve("T_NEG.exec"), cls),
-            negCovered(dir.resolve("T_POS.exec"), cls),
+        SortedSet<Integer> neg = coveredLines(COVERAGE.resolve("T_NEG.exec"));
+        SortedSet<Integer> pos = coveredLines(COVERAGE.resolve("T_POS.exec"));
+        assertNotEquals(neg, pos,
             "two tests exercising different branches must yield different per-test coverage");
     }
 
-    // Helper: covered lines for TargetService from an exec (same logic as GoldenEquivalenceIT).
-    private java.util.SortedSet<Integer> negCovered(Path exec, byte[] cls) throws Exception {
-        org.jacoco.core.data.ExecutionDataStore eds = new org.jacoco.core.data.ExecutionDataStore();
-        try (var in = Files.newInputStream(exec)) {
-            org.jacoco.core.data.ExecutionDataReader r = new org.jacoco.core.data.ExecutionDataReader(in);
+    private static SortedSet<Integer> coveredLines(Path exec) throws Exception {
+        byte[] cls = readResource("/io/pjacoco/agent/it/TargetService.class");
+        ExecutionDataStore eds = new ExecutionDataStore();
+        try (InputStream in = Files.newInputStream(exec)) {
+            ExecutionDataReader r = new ExecutionDataReader(in);
             r.setExecutionDataVisitor(eds);
-            r.setSessionInfoVisitor(new org.jacoco.core.data.SessionInfoStore());
+            r.setSessionInfoVisitor(new SessionInfoStore());
             r.read();
         }
-        org.jacoco.core.analysis.CoverageBuilder cb = new org.jacoco.core.analysis.CoverageBuilder();
-        new org.jacoco.core.analysis.Analyzer(eds, cb).analyzeClass(cls, "io/pjacoco/agent/it/TargetService");
-        java.util.SortedSet<Integer> lines = new java.util.TreeSet<>();
-        for (org.jacoco.core.analysis.IClassCoverage c : cb.getClasses())
-            for (int l = c.getFirstLine(); l <= c.getLastLine(); l++)
-                if (c.getLine(l).getStatus() != org.jacoco.core.analysis.ICounter.EMPTY
-                        && c.getLine(l).getStatus() != org.jacoco.core.analysis.ICounter.NOT_COVERED)
-                    lines.add(l);
+        CoverageBuilder cb = new CoverageBuilder();
+        new Analyzer(eds, cb).analyzeClass(cls, "io/pjacoco/agent/it/TargetService");
+        SortedSet<Integer> lines = new TreeSet<Integer>();
+        for (IClassCoverage c : cb.getClasses())
+            for (int l = c.getFirstLine(); l <= c.getLastLine(); l++) {
+                int s = c.getLine(l).getStatus();
+                if (s == ICounter.FULLY_COVERED || s == ICounter.PARTLY_COVERED) lines.add(l);
+            }
         return lines;
     }
-    private byte[] readTargetBytes() throws Exception {
-        try (var in = getClass().getClassLoader().getResourceAsStream("io/pjacoco/agent/it/TargetService.class")) {
-            return in.readAllBytes();
+
+    private static byte[] readResource(String res) throws Exception {
+        try (InputStream in = ParallelIsolationIT.class.getResourceAsStream(res)) {
+            assertNotNull(in, res);
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192]; int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            return bos.toByteArray();
         }
     }
 }
 ```
 
-> **Agent attachment for this IT:** the `integrationTest` JVM must run with
-> `-javaagent:build/libs/jacocoagent-parallel.jar=destfile=coverage` and the control port 6310.
-> Add to `build.gradle.kts` in the `integrationTest` task:
+> **`e2eTest` task (add to `build.gradle.kts`, separate from `integrationTest`):**
 > ```kotlin
-> jvmArgs("-javaagent:${layout.buildDirectory.get()}/libs/jacocoagent-parallel.jar=destfile=coverage,port=6310")
+> val e2eTest = tasks.register<Test>("e2eTest") {
+>     testClassesDirs = sourceSets["integrationTest"].output.classesDirs
+>     classpath = sourceSets["integrationTest"].runtimeClasspath
+>     useJUnitPlatform { includeTags("e2e") }            // tag ParallelIsolationIT @Tag("e2e")
+>     dependsOn(tasks.shadowJar)
+>     jvmArgs("-javaagent:${layout.buildDirectory.get()}/libs/jacocoagent-parallel.jar=destfile=coverage,port=6310")
+> }
 > ```
-> Because the agent instruments by name, ensure `includes` covers `io.pjacoco.agent.it.*`
-> (default `*` already does). Clean the `coverage/` dir in a `@BeforeAll`.
+> Tag `ParallelIsolationIT` with `@Tag("e2e")` and have the in-process `integrationTest` task
+> `useJUnitPlatform { excludeTags("e2e") }`. The agent instruments by name; default `includes=*`
+> covers `io.pjacoco.agent.it.*`.
 
 - [ ] **Step 3: Run, expect PASS**
 
@@ -2076,19 +2324,21 @@ package io.pjacoco.agent.it;
 
 import org.junit.jupiter.api.*;
 import io.pjacoco.agent.context.CoverageContext;
+import io.pjacoco.agent.inbound.servlet.ServletAdvice;
+import io.pjacoco.agent.store.TestStore;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ThreadReuseIT {
     @Test
     void contextClearedAfterRequestSoReusedThreadIsClean() {
         // Simulate a worker that handled a tagged request then is reused for an untagged one.
-        CoverageContext.set("T_PREV");
-        io.pjacoco.agent.inbound.servlet.ServletAdvice.deactivate();   // exit advice of prev request
+        CoverageContext.set(new TestStore("T_PREV", 1L, null));
+        ServletAdvice.deactivate();                                    // exit advice of prev request
         assertNull(CoverageContext.get(), "context must be cleared on request exit");
 
         // Untagged request arrives on the same thread: activate with no baggage -> stays null
-        io.pjacoco.agent.inbound.servlet.ServletAdvice.activate(new Object());
-        assertNull(CoverageContext.get(), "reused worker must not inherit previous testId");
+        ServletAdvice.activate(new Object());                          // not an HttpServletRequest
+        assertNull(CoverageContext.get(), "reused worker must not inherit previous test store");
     }
 }
 ```
@@ -2108,7 +2358,7 @@ git commit -m "test: thread reuse does not leak testId context"
 ### Task 17: Failure-isolation test — probe errors never reach the app
 
 **Files:**
-- Test: `src/test/java/io/pjacoco/agent/probe/ProbeRouterFailureTest.java`
+- Test: `src/test/java/io/pjacoco/agent/probe/CoverageBridgeFailureTest.java`
 
 - [ ] **Step 1: Write the test**
 
@@ -2117,35 +2367,36 @@ package io.pjacoco.agent.probe;
 
 import org.junit.jupiter.api.*;
 import io.pjacoco.agent.context.CoverageContext;
+import io.pjacoco.agent.store.TestStore;
 import static org.junit.jupiter.api.Assertions.*;
 
-class ProbeRouterFailureTest {
+class CoverageBridgeFailureTest {
     @AfterEach void clear() { CoverageContext.clear(); }
 
     @Test
-    void recordNeverThrowsEvenWithNoRegistry() {
-        ProbeRouter.bind(null);
-        CoverageContext.set("T1");
-        assertDoesNotThrow(() -> ProbeRouter.record(1L, "X", 0, 1));  // must swallow
+    void recordNeverThrowsWithoutContext() {
+        // no active store
+        assertDoesNotThrow(() -> CoverageBridge.recordCoverage(String.class, 1L, 0));  // must swallow
     }
 
     @Test
-    void recordNeverThrowsWithNegativeProbeCount() {
-        CoverageContext.set("T1");
-        assertDoesNotThrow(() -> ProbeRouter.record(1L, "X", 5, -1)); // bad args swallowed
+    void recordNeverThrowsOnOutOfRangeProbe() {
+        CoverageBridge.setTotalProbeCount("java/lang/String", 2);
+        CoverageContext.set(new TestStore("T1", 1L, null));
+        assertDoesNotThrow(() -> CoverageBridge.recordCoverage(String.class, 1L, 99)); // out of range -> ignored
     }
 }
 ```
 
-- [ ] **Step 2: Run, expect PASS** (ProbeRouter already swallows from Task 7)
+- [ ] **Step 2: Run, expect PASS** (CoverageBridge already swallows from Task 7)
 
-Run: `./gradlew test --tests '*ProbeRouterFailureTest'`
+Run: `./gradlew test --tests '*CoverageBridgeFailureTest'`
 Expected: PASS.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/test/java/io/pjacoco/agent/probe/ProbeRouterFailureTest.java
+git add src/test/java/io/pjacoco/agent/probe/CoverageBridgeFailureTest.java
 git commit -m "test: probe routing failures are swallowed, never reach the app"
 ```
 
@@ -2204,26 +2455,30 @@ git commit -m "ci: weekly JaCoCo version canary running golden-equivalence matri
 ## Self-Review (completed during planning)
 
 **Spec coverage check (spec §→task):**
-- §3 architecture / single embedded agent → Task 0 (shade), Task 14 (wiring) ✓
-- §3.1 components → CoverageContext T1, TestStore T2, Registry T6, ProbeRouter T7, Inbound SPI/servlet T9-10, ControlEndpoint T8, ExecWriter T4, Observability T5, ProbeInstrumentation T11 ✓
-- §3.2 per-probe bridge mechanism → Task 11 (spike) ✓
-- §4 data flow (test + request lifecycle) → Task 8 (control), Task 10 (inbound), Task 15 (E2E) ✓
-- §4.3 strict default / lenient option / untagged no-op / context clear → Task 6, Task 7, Task 10, Task 16 ✓
-- §5 output (.exec + sidecar, retryCount, shardId) → Task 4 ✓; §5 sidecar index assembly across tests is per-file (no manifest task needed for v1; `manifest.json` assembly is read-time and can be a tiny follow-up — noted as NOT in v1 critical path) ⚠️ **gap closed below**
-- §6 jacoco option passthrough/replace → Task 13 (parse/classify) + Task 11 (apply includes/excludes) ✓
-- §7.1 concurrent same-testId → TestStore ConcurrentHashMap (Task 2) ✓
+- §3 architecture / single embedded agent → Task 0 (shade), Task 11 (instrument+hook), Task 14 (wiring) ✓
+- §3.1 components → CoverageContext T1, TestStore T2, Registry T6, CoverageBridge T7, Inbound SPI/servlet T9-10, ControlEndpoint T8, ExecWriter T4, Observability T5, ProbeInstrumentation+advice T11 ✓
+- §3.2 instrument-time hook mechanism → Task 11 (ported from validated `spike/`) ✓
+- §4 data flow (test + request lifecycle) → Task 8 (control), Task 10 (inbound resolves store), Task 15 (E2E) ✓
+- §4.3 strict default / lenient option / untagged no-op / context clear / activation-time reject → Task 6, Task 10 (activate), Task 16 ✓
+- §5 output (.exec + sidecar, retryCount, shardId) → Task 4 ✓; global `manifest.json` header written once at premain (Task 14) carries commitSha/jacocoVersion/precision; full index = header + sidecar scan (read-time) ✓
+- §6 jacoco option passthrough/replace → Task 13 (parse/classify) + Task 11 (`WildcardMatcher` includes/excludes in the transformer) ✓
+- §7.1 concurrent same-testId → TestStore ConcurrentHashMap (Task 2); **validated** by spike parallel-isolation ✓
 - §7.2 assumption-mode flush (snapshot) → Task 4 snapshot + Task 6 stop ✓
 - §7.3 retry overwrite → Task 6 ✓
-- §7.4 failure isolation → Task 7 + Task 17 ✓
-- §7.4 memory guard (cap/TTL, partial) → Task 6 (cap + dumpRemainingAsPartial) ✓ (TTL eviction deferred — cap covers v1; note below)
+- §7.4 failure isolation → Task 7 (CoverageBridge swallows) + Task 17 ✓
+- §7.4 memory guard (cap/partial) → Task 6 (cap + dumpRemainingAsPartial) ✓ (time-based TTL deferred to phase 2; cap covers v1)
 - §7.5 loopback control binding → Task 8 + Task 13 default 127.0.0.1 ✓
 - §7.6 observability counters + shutdown summary → Task 5 + Task 14 ✓
-- §8 testing: golden equiv T12, parallel isolation T15, thread reuse T16, failure isolation T17, version canary T18 ✓
+- §8 testing: golden equiv T12, parallel isolation T15 (e2e task), thread reuse T16, failure isolation T17, version canary T18 ✓
 
-**Two gaps found and closed:**
-1. **`manifest.json` assembly** (spec §5) is not a v1 critical-path task — per-test sidecars are the source of truth and the manifest is a read-time roll-up. Deferred intentionally; the assembly is a trivial directory scan a consumer (TIA) can do. If a built manifest is wanted in v1, add a one-task `Manifest` that scans `<dir>/*.json` and writes `manifest.json` with the global header (`schemaVersion`, `jacocoVersion`, `commitSha`, `precision`). Not blocking the vertical slice.
-2. **TTL eviction** (spec §7.4) — v1 implements the store **cap** (hard bound on count) which is the crash-safety essential; time-based TTL is a refinement deferred to phase 2 and recorded here so it is not silently dropped.
+**Resolved in v2 (vs first draft):**
+1. **Mechanism validated** — the per-test routing is proven in `spike/`; Task 11 ports it. Frozen interface is `CoverageBridge.recordCoverage(Class,long,int)` + `setTotalProbeCount(String,int)`.
+2. **IT harness (C2)** — in-process ITs instrument into a fresh `MemoryClassLoader` (load-time); the E2E runs in a **separate `e2eTest` task** with the real `-javaagent` and asserts via files. No retransformation of loaded classes; no double instrumentation.
+3. **commitSha (S5)** — persisted by the premain `manifest.json` header (no `__bootstrap_commit__`).
+4. **Hot-path accounting (S2)** — strict reject/count at activation (Task 10), not per probe.
+5. **`manifest.json` assembly** — header at premain + per-test sidecars; full roll-up is a read-time scan (a consumer like TIA does it). Not on the v1 critical path.
+6. **TTL eviction** (spec §7.4) — v1 implements the store **cap**; time-based TTL deferred to phase 2 (recorded so it is not silently dropped).
 
-**Placeholder scan:** no TBD/TODO; every code step carries complete code except Task 11 Step 4, which is an explicit, acceptance-test-bounded spike (the one place where fabricating bytecode would be dishonest — its "done" is defined by the passing tests in Tasks 11–12).
+**Placeholder scan:** no TBD/TODO; every code step carries complete code. Task 11's advice/bridge is **verbatim from the passing `spike/`**; the only non-validated piece is the standard agent plumbing (`ClassFileTransformer` + `ModifiedSystemClassRuntime`), exercised by the Task 15 e2e.
 
-**Type consistency:** `ProbeRouter.record(long, String, int, int)` is identical across Tasks 7, 11, 12, 17. `TestStore.record(long, String, int, int)`, `snapshot()`, `classCount()`, `retryCount()` consistent across Tasks 2, 4, 6. `TestStoreRegistry(Path, ExecWriter, Metrics, AgentLog, boolean, int, LongSupplier)` identical across Tasks 6, 7, 8, 11, 12, 14. `ExecWriter.write(...)` 6-arg + 5-arg overloads consistent across Tasks 4, 6.
+**Type consistency:** `CoverageBridge.recordCoverage(Class, long, int)` + `setTotalProbeCount(String, int)` identical across Tasks 7, 11, 12, 17. `TestStore.record(long, String, int, int)`, `snapshot()`, `classCount()`, `retryCount()` consistent across Tasks 2, 4, 6, 7. `CoverageContext` holds `TestStore` across Tasks 1, 7, 10, 16. `TestStoreRegistry(Path, ExecWriter, Metrics, AgentLog, boolean, int, LongSupplier)` identical across Tasks 6, 8, 10, 14; `.active(testId)` used at activation (Task 10), stop (Task 6), control (Task 8). `ExecWriter.write(...)` 6-arg + 5-arg overloads consistent across Tasks 4, 6.
