@@ -196,25 +196,41 @@ class SpecAcceptanceE2E {
         assertFalse(json.contains("\"tests\""), "manifest header must not contain a tests array");
     }
 
-    // ---- spec §2/§4.3: strict mode — unregistered testId is processed by the app but not recorded ----
+    // ---- spec §2/§4.3: strict mode — an unregistered testId is processed by the app but never recorded.
+    // Crucially we ALSO stop GHOST: a lenient/auto-create regression only surfaces on flush, so without
+    // the stop the test could not tell strict-reject from lazily-created-but-never-flushed. ----
     @Test
     void strictMode_unregisteredTestId_producesNoExec() throws Exception {
         app("GHOST", "positive");                  // app() asserts the request returned "ok" (it ran)
-        assertFalse(Files.exists(COVERAGE.resolve("GHOST.exec")), "strict mode must not record an unregistered testId");
+        control("/__coverage__/test/stop?testId=GHOST&result=passed");   // no-op under strict; would flush if lenient
+        assertFalse(Files.exists(COVERAGE.resolve("GHOST.exec")), "strict mode must not record/flush an unregistered testId");
         assertFalse(Files.exists(COVERAGE.resolve("GHOST.json")), "no sidecar for an unregistered testId");
     }
 
-    // ---- spec §4.3: untagged traffic is not recorded into an active test ----
+    // ---- spec §4.3: untagged traffic is neither recorded as its own test NOR leaked into an active
+    // test via a reused worker whose ThreadLocal context was not cleared on request exit. ----
     @Test
-    void untaggedRequest_notRecorded() throws Exception {
-        startTest("UNTAGGED", null);
-        app(null, "positive");                     // no baggage header
-        app(null, "negative");
-        stopTest("UNTAGGED", "passed");
+    void untaggedRequest_notRecorded_andNoThreadLeak() throws Exception {
+        // a clean positive run = what T_LEAK must look like if untagged negatives are NOT leaked in
+        runSingle("BASE_POS_U", "positive");
+        SortedSet<Integer> posBase = coveredLines(COVERAGE.resolve("BASE_POS_U.exec"));
 
-        Path exec = COVERAGE.resolve("UNTAGGED.exec");
-        assertTrue(Files.exists(exec), "a stopped test still flushes an exec");
-        assertTrue(coveredLines(exec).isEmpty(), "untagged requests must not be recorded into the active test");
+        startTest("T_LEAK", null);
+        for (int i = 0; i < 12; i++) app("T_LEAK", "positive");   // warm the worker pool with T_LEAK context
+        for (int i = 0; i < 12; i++) app(null, "negative");       // untagged, DIFFERENT branch, on reused workers
+        stopTest("T_LEAK", "passed");
+
+        SortedSet<Integer> leak = coveredLines(COVERAGE.resolve("T_LEAK.exec"));
+        // If clear() were skipped, a reused worker would still hold T_LEAK and record the untagged
+        // negative branch into it -> leak would gain the negative-only lines.
+        assertEquals(posBase, leak,
+                "untagged negatives must not be recorded/leaked into T_LEAK (positive-only); leak=" + leak + " posBase=" + posBase);
+
+        // a separately-started test that only ever sees untagged traffic stays empty
+        startTest("UNTAGGED", null);
+        app(null, "positive");
+        stopTest("UNTAGGED", "passed");
+        assertTrue(coveredLines(COVERAGE.resolve("UNTAGGED.exec")).isEmpty(), "untagged-only test must be empty");
         assertJsonEquals(readFile(COVERAGE.resolve("UNTAGGED.json")), "classCount", "0");
     }
 

@@ -91,6 +91,7 @@ val e2eTest = tasks.register<Test>("e2eTest") {
     testClassesDirs = sourceSets["integrationTest"].output.classesDirs
     classpath = sourceSets["integrationTest"].runtimeClasspath
     useJUnitPlatform { includeTags("e2e") }
+    outputs.upToDateWhen { false }      // always re-run: exercises the freshly built agent jar (side-effecting)
     dependsOn(tasks.shadowJar)
     val agentJar = layout.buildDirectory.file("libs/jacocoagent-parallel.jar")
     doFirst {
