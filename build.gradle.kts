@@ -8,7 +8,7 @@ jacoco { toolVersion = "0.8.12" }
 
 group = "io.pjacoco"   // NOT org.jacoco — that namespace belongs to the JaCoCo project
 // Overridable so the release workflow can stamp the published version: -PreleaseVersion=x.y.z
-version = providers.gradleProperty("releaseVersion").getOrElse("0.1.0")
+version = providers.gradleProperty("releaseVersion").getOrElse("1.0.0")
 
 java {
     sourceCompatibility = JavaVersion.VERSION_1_8
