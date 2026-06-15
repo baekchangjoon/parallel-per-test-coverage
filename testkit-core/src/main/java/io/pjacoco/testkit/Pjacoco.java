@@ -121,8 +121,8 @@ public final class Pjacoco {
     private static String enc(String value) {
         try {
             return URLEncoder.encode(value, "UTF-8");
-        } catch (Exception e) {
-            return value; // unreachable for UTF-8; keep best-effort
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new AssertionError("UTF-8 is always supported", e); // never happens
         }
     }
 

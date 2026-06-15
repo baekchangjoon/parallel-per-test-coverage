@@ -13,10 +13,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * AC2/AC6: apply {@code io.pjacoco.gradle} to a real consumer build and prove the plugin resolves the
- * agent, composes/injects {@code -javaagent} + {@code -Dpjacoco.control-url} into the test JVM, and the
- * agent produces a per-test {@code .exec} (+ sidecar) for an in-JVM black-box scenario. The freshly
- * built shaded agent + testkit jars are served to the consumer via a flatDir repo (no publishing).
+ * AC2 (in-JVM path): apply {@code io.pjacoco.gradle} to a real consumer build and prove the plugin
+ * resolves the agent, composes/injects {@code -javaagent} + {@code -Dpjacoco.control-url} into the
+ * test JVM, and the agent produces a per-test {@code .exec} (+ sidecar) for an in-JVM black-box
+ * scenario (embedded Jetty servlet in the test JVM). The freshly built shaded agent + testkit jars
+ * are served to the consumer via a flatDir repo (no publishing).
+ *
+ * <p>The separate-process path (AC6 — SUT in its own JVM via {@code JavaExec}, wired with the exposed
+ * {@code pjacoco.agentJvmArg}) is not covered here; see the design spec's open items.
  */
 class PjacocoPluginFunctionalTest {
 

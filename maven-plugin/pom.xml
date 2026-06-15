@@ -9,7 +9,7 @@
        repository (publish the agent with `./gradlew :agent:publishToMavenLocal` first). -->
   <groupId>io.pjacoco</groupId>
   <artifactId>pjacoco-maven-plugin</artifactId>
-  <version>1.0.0</version>
+  <version>1.1.0</version>
   <packaging>maven-plugin</packaging>
 
   <name>pjacoco-maven-plugin</name>
@@ -19,7 +19,7 @@
     <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.version>3.9.9</maven.version>
-    <pjacoco.agent.version>1.0.0</pjacoco.agent.version>
+    <pjacoco.agent.version>1.1.0</pjacoco.agent.version>
   </properties>
 
   <dependencies>
