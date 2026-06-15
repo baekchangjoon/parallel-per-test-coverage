@@ -63,10 +63,22 @@ Test harness                          Target app JVM  (-javaagent:jacocoagent-pa
 > **Keystone check**: in a single instrument+run, the per-test probe array equals jacoco's global array
 > **byte-for-byte** (`GoldenEquivalenceIT`); concurrent isolation is proven too (`spike/`, e2e).
 
+## Download
+
+Grab a pre-built agent jar from the [**Releases**](../../releases/latest) page instead of building it yourself.
+
+```bash
+# Download jacocoagent-parallel-<version>.jar and its .sha256 checksum from the Releases page.
+sha256sum -c jacocoagent-parallel-<version>.jar.sha256   # verify integrity
+```
+
+Releases are published by the `release` GitHub Actions workflow (manual run): Actions → "release" → "Run workflow".
+
 ## Quick start
 
 ```bash
 # 1) Build the agent jar (JDK 17+ to run Gradle; the artifact targets Java 8)
+#    Or grab a pre-built jar from "Download" above.
 JAVA_HOME=<jdk17+> ./gradlew shadowJar
 #   → build/libs/jacocoagent-parallel.jar
 
