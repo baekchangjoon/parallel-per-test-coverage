@@ -12,6 +12,7 @@ repositories { mavenCentral() }
 
 dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
+    testImplementation(gradleTestKit())
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -26,4 +27,18 @@ gradlePlugin {
     }
 }
 
-tasks.test { useJUnitPlatform() }
+// The functional test (TestKit) needs the freshly built agent (shaded) + testkit-core jars, served to
+// the generated consumer build via a flatDir repo — no publishing required. evaluationDependsOn makes
+// those projects' tasks resolvable here regardless of configuration order.
+evaluationDependsOn(":agent")
+evaluationDependsOn(":testkit-core")
+val agentShadowJar = project(":agent").tasks.named("shadowJar")
+val testkitJar = project(":testkit-core").tasks.named("jar")
+
+tasks.test {
+    useJUnitPlatform()
+    dependsOn(agentShadowJar, testkitJar)
+    systemProperty("pjacoco.it.agentJar", agentShadowJar.get().outputs.files.singleFile.absolutePath)
+    systemProperty("pjacoco.it.testkitJar", testkitJar.get().outputs.files.singleFile.absolutePath)
+    systemProperty("pjacoco.it.version", project.version.toString())
+}
