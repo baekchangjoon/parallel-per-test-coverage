@@ -1,5 +1,6 @@
 plugins {
     `java-gradle-plugin`
+    id("com.gradle.plugin-publish") version "1.2.1"
 }
 
 // The plugin runs in Gradle's JVM (Java 11+); the agent it resolves stays Java 8 compatible.
@@ -17,12 +18,15 @@ dependencies {
 }
 
 gradlePlugin {
+    website.set("https://github.com/baekchangjoon/parallel-per-test-coverage")
+    vcsUrl.set("https://github.com/baekchangjoon/parallel-per-test-coverage.git")
     plugins {
         create("pjacoco") {
             id = "io.pjacoco.gradle"
             implementationClass = "io.pjacoco.gradle.PjacocoPlugin"
             displayName = "pjacoco per-test coverage"
             description = "Resolves the pjacoco agent and wires -javaagent for per-test coverage of parallel black-box suites."
+            tags.set(listOf("coverage", "jacoco", "testing", "per-test", "javaagent"))
         }
     }
 }
