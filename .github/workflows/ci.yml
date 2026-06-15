@@ -29,12 +29,12 @@ jobs:
           cache: gradle
 
       - name: Run all tests + coverage
-        run: ./gradlew --no-daemon test integrationTest e2eTest e2eJakartaTest e2eCondyTest jacocoTestReport
+        run: ./gradlew --no-daemon :agent:test :agent:integrationTest :agent:e2eTest :agent:e2eJakartaTest :agent:e2eCondyTest :agent:jacocoTestReport
 
       - name: Coverage summary
         if: always()
         run: |
-          REPORT=build/reports/jacoco/test/jacocoTestReport.xml
+          REPORT=agent/build/reports/jacoco/test/jacocoTestReport.xml
           {
             echo "## Test results & coverage"
             echo ""
@@ -61,7 +61,7 @@ jobs:
         with:
           name: reports
           path: |
-            build/reports/tests/
-            build/reports/jacoco/
+            agent/build/reports/tests/
+            agent/build/reports/jacoco/
           if-no-files-found: ignore
           retention-days: 14
