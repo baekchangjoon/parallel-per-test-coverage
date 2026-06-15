@@ -76,13 +76,13 @@ jobs:
       - name: Build + test the agent jar
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-        run: ./gradlew --no-daemon "-PreleaseVersion=$VERSION" test shadowJar
+        run: ./gradlew --no-daemon "-PreleaseVersion=$VERSION" :agent:test :agent:shadowJar
 
       - name: Stage versioned artifacts
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          SRC=build/libs/jacocoagent-parallel.jar
+          SRC=agent/build/libs/jacocoagent-parallel.jar
           test -f "$SRC" || { echo "::error::Expected $SRC was not produced by shadowJar."; exit 1; }
           mkdir -p dist
           cp "$SRC" "dist/jacocoagent-parallel-${VERSION}.jar"
