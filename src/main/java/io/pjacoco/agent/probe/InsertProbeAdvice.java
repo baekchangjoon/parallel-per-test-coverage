@@ -19,9 +19,12 @@ public class InsertProbeAdvice {
             @Advice.FieldValue("arrayStrategy") Object arrayStrategy,
             @Advice.Argument(0) int id)
             throws Exception {
-        // arrayStrategy is jacoco's ClassFieldProbeArrayStrategy (package-private): reflect fields.
-        // If a different strategy (e.g. Condy for Java 11+ classes) is used, the fields are absent and
-        // the surrounding suppress(Throwable) makes this a no-op (graceful degradation).
+        // arrayStrategy is one of jacoco's package-private *ProbeArrayStrategy classes: reflect its
+        // className/classId fields. All three — ClassField (<=Java10 bytecode), Condy (Java 11+
+        // bytecode) and Local (interfaces) — declare className+classId with identical names, so this
+        // works regardless of the SUT's bytecode version (verified by ProbeRoutingCondyIT, which
+        // routes probes for a major-55 class). suppress(Throwable) keeps any future strategy lacking
+        // those fields a safe no-op rather than breaking instrumentation.
         Field classNameField = arrayStrategy.getClass().getDeclaredField("className");
         classNameField.setAccessible(true);
         String className = (String) classNameField.get(arrayStrategy);

@@ -73,22 +73,63 @@ dependencies {
     integrationTestImplementation("org.eclipse.jetty:jetty-servlet:9.4.55.v20240627")
 }
 
-// App-under-test classes (TargetService, SampleServlet) must be Java 8 bytecode so jacoco uses the
-// ClassFieldProbeArrayStrategy (className/classId fields the advice reflects). Java 11+ regular
-// classes use CondyProbeArrayStrategy instead — out of v1 scope.
+// TargetService/SampleServlet are kept at Java 8 bytecode so jacoco uses ClassFieldProbeArrayStrategy
+// here. Java 11+ bytecode (which makes jacoco pick CondyProbeArrayStrategy) is ALSO supported by the
+// routing hook — proven by the condyFixture + ProbeRoutingCondyIT below; these javax/jetty fixtures
+// simply don't need bumping.
 tasks.named<JavaCompile>("compileIntegrationTestJava") {
     options.release.set(8)
 }
 
-// In-process mechanism ITs (manual ByteBuddyAgent self-attach). Excludes the real-agent e2e.
+// ---- condyFixture source set: a SUT class compiled to Java 11+ bytecode (major >= 55) ----
+// Any major >= 55 makes jacoco's ProbeArrayStrategyFactory pick CondyProbeArrayStrategy (Java 11 and
+// Java 17 take the IDENTICAL branch), so ProbeRoutingCondyIT + e2eCondyTest prove the Condy path.
+// The bytecode level is a property: default 11 keeps the fixture buildable on the JDK 11 baseline;
+// CI's e2e matrix passes -PcondyRelease=17 / 21 (where that JDK is available) to exercise newer
+// bytecode too. The output is a loadable .class resource on integrationTest's classpath.
+val condyRelease = providers.gradleProperty("condyRelease").map { it.toInt() }.getOrElse(11)
+val condyFixtureSrc = sourceSets.create("condyFixture") {
+    java.srcDir("src/condyFixture/java")
+}
+tasks.named<JavaCompile>("compileCondyFixtureJava") {
+    options.release.set(condyRelease)
+}
+sourceSets.named("integrationTest") {
+    compileClasspath += condyFixtureSrc.output   // CondyServlet/CondyE2E reference CondyTarget
+    runtimeClasspath += condyFixtureSrc.output
+}
+
+// In-process mechanism ITs (manual ByteBuddyAgent self-attach). Excludes the real-agent e2es.
 val integrationTest = tasks.register<Test>("integrationTest") {
     description = "In-process probe-mechanism integration tests"
     group = "verification"
     testClassesDirs = sourceSets["integrationTest"].output.classesDirs
     classpath = sourceSets["integrationTest"].runtimeClasspath
-    useJUnitPlatform { excludeTags("e2e") }
+    useJUnitPlatform { excludeTags("e2e", "e2econdy") }
     jvmArgs("-Djdk.attach.allowAttachSelf=true", "-XX:+EnableDynamicAgentLoading")
     shouldRunAfter(tasks.test)
+}
+
+// End-to-end on MODERN (Java 11+) bytecode: real -javaagent attached, instrumenting CondyTarget
+// (major 55 -> jacoco's CondyProbeArrayStrategy). Proves per-test routing works end-to-end for the
+// Condy path, not just in-process. Own control port + output dir so it runs beside the other e2es.
+val e2eCondyTest = tasks.register<Test>("e2eCondyTest") {
+    description = "End-to-end per-test coverage on Java 11+ (Condy) bytecode with the real -javaagent"
+    group = "verification"
+    testClassesDirs = sourceSets["integrationTest"].output.classesDirs
+    classpath = sourceSets["integrationTest"].runtimeClasspath
+    useJUnitPlatform { includeTags("e2econdy") }
+    outputs.upToDateWhen { false }
+    dependsOn(tasks.shadowJar)
+    val agentJar = layout.buildDirectory.file("libs/jacocoagent-parallel.jar")
+    doFirst {
+        jvmArgs(
+            "-javaagent:${agentJar.get().asFile.absolutePath}=destfile=build/coverage-condy,port=6312,includes=com.example.app.CondyTarget",
+            "-DPJACOCO_E2E_OUTPUT=build/coverage-condy"
+        )
+    }
+    environment("PJACOCO_COMMIT", "e2e-condy-deadbeef")
+    extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension::class.java).isEnabled = false
 }
 
 // End-to-end: real -javaagent attached, asserts via .exec files only. Separate JVM from the
