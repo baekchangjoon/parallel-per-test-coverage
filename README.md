@@ -111,6 +111,57 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 | `lenient` | 미등록 testId 자동 등록(기본은 엄격: 미기록) | `false` |
 | `commitSha` | manifest 헤더에 기록(또는 env `PJACOCO_COMMIT`) | — |
 
+## 의존성/플러그인으로 사용 (권장)
+
+jar를 직접 다운로드해 `-javaagent`를 손으로 붙이는 대신, **빌드 플러그인 + 테스트킷**으로 쓸 수 있습니다.
+플러그인이 에이전트를 자동으로 받아 `-javaagent`를 꽂고, 테스트킷이 테스트별 경계(start/stop)와
+`baggage: test.id=...` 전파를 담당합니다.
+
+**Gradle** (`build.gradle.kts`):
+
+```kotlin
+plugins { id("io.pjacoco.gradle") version "1.1.0" }
+
+pjacoco {
+    includes.set(listOf("com.example.*"))
+    attachTo.set(listOf("integrationTest"))   // 이 테스트 태스크 JVM에 에이전트 + control-url 자동 주입
+}
+dependencies {
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.1.0")
+    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.1.0")
+}
+```
+
+```java
+@ExtendWith(io.pjacoco.testkit.junit5.PjacocoExtension.class)   // 테스트별 start/stop + test.id
+class OwnerBlackBoxIT {
+    @BeforeAll static void enable() { io.pjacoco.testkit.restassured.PjacocoRestAssured.enable(); } // baggage 자동
+    // ... REST Assured 병렬 블랙박스 테스트 ...
+}
+```
+
+> 별도 프로세스 서버라면 `attachTo`는 테스트 태스크에 두고(testkit가 control-url 받음),
+> 서버 기동에는 `pjacoco.agentJvmArg`(노출되는 프로퍼티)를 한 줄 꽂으면 됩니다. JUnit 4는
+> `io.pjacoco:pjacoco-testkit-junit4`의 `@Rule PjacocoRule`을 쓰세요.
+
+**Maven** (`pom.xml`): `prepare-agent`가 `pjacoco.argLine`을 세팅하고 surefire가 이를 참조합니다.
+
+```xml
+<plugin>
+  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.1.0</version>
+  <executions><execution><goals><goal>prepare-agent</goal></goals></execution></executions>
+  <configuration><includes><include>com.example.*</include></includes></configuration>
+</plugin>
+<plugin>
+  <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+  <configuration><argLine>${pjacoco.argLine}</argLine></configuration>
+</plugin>
+```
+
+> 산출물 좌표: 에이전트 `io.pjacoco:pjacoco-agent`, 테스트킷 `io.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
+> Gradle 플러그인 id `io.pjacoco.gradle`, Maven 플러그인 `io.pjacoco:pjacoco-maven-plugin`. 공개 배포(Maven
+> Central / Gradle Plugin Portal)는 준비 중이며, 로컬 검증 방법은 [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
+
 ## 산출물
 
 ```

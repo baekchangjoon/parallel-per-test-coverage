@@ -106,6 +106,58 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 | `lenient` | auto-register unknown testIds (default strict: not recorded) | `false` |
 | `commitSha` | written to the manifest header (or env `PJACOCO_COMMIT`) | — |
 
+## Use as a dependency / plugin (recommended)
+
+Instead of downloading the jar and hand-wiring `-javaagent`, use the **build plugin + testkit**. The
+plugin resolves the agent and injects `-javaagent`; the testkit owns the per-test boundary (start/stop)
+and `baggage: test.id=...` propagation.
+
+**Gradle** (`build.gradle.kts`):
+
+```kotlin
+plugins { id("io.pjacoco.gradle") version "1.1.0" }
+
+pjacoco {
+    includes.set(listOf("com.example.*"))
+    attachTo.set(listOf("integrationTest"))   // inject the agent + control-url into this test JVM
+}
+dependencies {
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.1.0")
+    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.1.0")
+}
+```
+
+```java
+@ExtendWith(io.pjacoco.testkit.junit5.PjacocoExtension.class)   // per-test start/stop + test.id
+class OwnerBlackBoxIT {
+    @BeforeAll static void enable() { io.pjacoco.testkit.restassured.PjacocoRestAssured.enable(); } // baggage
+    // ... parallel REST Assured black-box tests ...
+}
+```
+
+> For a separately-launched server, point `attachTo` at the test task (testkit side gets the
+> control-url) and wire the exposed `pjacoco.agentJvmArg` property onto the server launch. For JUnit 4
+> use `@Rule PjacocoRule` from `io.pjacoco:pjacoco-testkit-junit4`.
+
+**Maven** (`pom.xml`): `prepare-agent` sets `pjacoco.argLine`, which surefire references.
+
+```xml
+<plugin>
+  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.1.0</version>
+  <executions><execution><goals><goal>prepare-agent</goal></goals></execution></executions>
+  <configuration><includes><include>com.example.*</include></includes></configuration>
+</plugin>
+<plugin>
+  <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+  <configuration><argLine>${pjacoco.argLine}</argLine></configuration>
+</plugin>
+```
+
+> Coordinates: agent `io.pjacoco:pjacoco-agent`, testkit `io.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
+> Gradle plugin id `io.pjacoco.gradle`, Maven plugin `io.pjacoco:pjacoco-maven-plugin`. Public release
+> (Maven Central / Gradle Plugin Portal) is pending; see [`docs/PUBLISHING.md`](docs/PUBLISHING.md) for
+> local validation today.
+
 ## Output
 
 ```
