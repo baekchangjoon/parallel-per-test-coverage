@@ -15,3 +15,6 @@ build/
 # Maven build outputs
 target/
 **/target/
+
+# CodeGraph local index (user tooling, not project state)
+.codegraph/
