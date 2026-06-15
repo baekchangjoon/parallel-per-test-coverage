@@ -70,6 +70,36 @@ jobs:
           :testkit-core:test :testkit-junit4:test :testkit-restassured:test
           -PtestJavaVersion=8
 
+  # AC1 + AC4: the standalone Gradle consumer — a parallel REST Assured suite (JUnit 5) and a JUnit 4
+  # suite (Vintage), both via the plugin + testkit, producing one .exec per test.
+  gradle-sample:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Publish plugin + agent + testkit to mavenLocal
+        run: >
+          ./gradlew --no-daemon
+          :agent:publishToMavenLocal
+          :testkit-core:publishToMavenLocal :testkit-junit5:publishToMavenLocal
+          :testkit-junit4:publishToMavenLocal :testkit-restassured:publishToMavenLocal
+          :gradle-plugin:publishToMavenLocal
+      - name: Run the gradle sample (parallel REST Assured + JUnit 4)
+        run: ./gradlew --no-daemon -p samples/gradle-sample test
+      - name: Assert per-test coverage was produced
+        run: |
+          for t in "OwnerRestAssuredIT#negativeBranch" "OwnerRestAssuredIT#positiveBranch" "CalcJUnit4Test#classifies"; do
+            test -s "samples/gradle-sample/build/pjacoco/$t.exec" \
+              || { echo "::error::missing $t.exec"; exit 1; }
+            grep -q '"classCount":1' "samples/gradle-sample/build/pjacoco/$t.json" \
+              || { echo "::error::$t did not record Calc coverage"; exit 1; }
+          done
+
   # AC3: the Maven plugin + the maven-sample consumer, end-to-end, against locally published artifacts.
   maven-sample:
     runs-on: ubuntu-latest

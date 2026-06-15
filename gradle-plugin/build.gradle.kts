@@ -1,6 +1,7 @@
 plugins {
     `java-gradle-plugin`
     id("com.gradle.plugin-publish") version "1.2.1"
+    `maven-publish`   // also lets the sample resolve the plugin from mavenLocal in CI
 }
 
 // The plugin runs in Gradle's JVM (Java 11+); the agent it resolves stays Java 8 compatible.

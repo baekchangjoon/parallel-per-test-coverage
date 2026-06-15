@@ -325,3 +325,29 @@ verification (GPT); pinned publish channel (Central Portal via `com.vanniktech.m
 secret names (Sonnet, GPT); plugin Gradle/Java baseline (GPT); artifact coordinate/filename table (GPT);
 `destfile` naming-collision note + `shardId` nullable (Sonnet); fixed "four e2e tasks" wording (GPT).
 No findings rejected — all were located and verifiable.
+
+## 12. Post-review implementation resolution (as-built)
+
+A spec-compliance + code-quality review of the implementation ran before the PR. Resolution:
+
+- **All acceptance tests implemented and green:** AC1 (REST Assured parallel, `samples/gradle-sample`
+  `OwnerRestAssuredIT`), AC2 (`PjacocoPluginFunctionalTest`, in-JVM), AC3 (`samples/maven-sample` + CI),
+  AC4 (`samples/gradle-sample` `CalcJUnit4Test`, JUnit 4 via Vintage), AC5 (agent suite in CI),
+  AC6 (`PjacocoSeparateProcessFunctionalTest` — a consumer `JavaExec` task wires the plugin's
+  `agentJvmArg` onto a separate JVM; that JVM produces the per-test `.exec`). `samples/gradle-sample`
+  now exists as a real standalone consumer (resolved from mavenLocal) and runs in CI.
+- **Code-quality fixes applied:** Maven `argLine` quotes the `-javaagent` arg (space-safe);
+  `Pjacoco.enc()` narrows its catch; `ScenarioMain` calls `System.exit(0)` to release the control port.
+- **Version** baseline set to **1.1.0** across all modules.
+- **Accepted deviations (with rationale):** `attachTo` is `ListProperty<String>` of task names (avoids
+  eager task realization, survives config ordering) rather than `Property<TaskProvider>`; AC2/AC6 use
+  self-contained TestKit consumers (flatDir) instead of `includeBuild`, and AC3 invokes `mvn` directly
+  instead of maven-invoker — all functionally equivalent and CI-verified; JUnit5 `META-INF/services`
+  auto-registration omitted (the spec offered it as an alternative to `@ExtendWith`).
+- **CI matrix:** JDK 11/17/21 run the full suite (condyRelease tracks the JDK); JDK 8 is a separate
+  `jdk8-compat` job that forks the Java-8 testkit tests on a JDK 8 toolchain (Condy bytecode can't load
+  on JDK 8, and the agent/junit5 harnesses use Mockito 5 / Java 11+). JUnit 4 vs 5 is covered by the
+  testkit-junit4 / testkit-junit5 module suites plus the gradle-sample (both engines).
+- **Public publishing:** POM metadata + gated GPG signing + Gradle Plugin Portal wiring are in place;
+  the Maven Central **Central Portal** upload (`com.vanniktech.maven.publish`) remains the one
+  credentials-gated follow-up, documented in `docs/PUBLISHING.md`.
