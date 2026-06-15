@@ -1,5 +1,6 @@
 plugins {
     `java-library`
+    `maven-publish`
 }
 
 java {
@@ -21,3 +22,16 @@ dependencies {
 }
 
 tasks.test { useJUnitPlatform() }
+
+publishing {
+    publications {
+        create<MavenPublication>("library") {
+            artifactId = "pjacoco-testkit-restassured"
+            from(components["java"])
+            pom {
+                name.set("pjacoco-testkit-restassured")
+                description.set("pjacoco REST Assured baggage filter.")
+            }
+        }
+    }
+}

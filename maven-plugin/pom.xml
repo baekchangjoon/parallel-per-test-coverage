@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Built with Maven (not the Gradle multi-module build) because it produces a Maven plugin and
+       needs the maven-plugin-plugin descriptor generator. Resolves io.pjacoco:pjacoco-agent from the
+       repository (publish the agent with `./gradlew :agent:publishToMavenLocal` first). -->
+  <groupId>io.pjacoco</groupId>
+  <artifactId>pjacoco-maven-plugin</artifactId>
+  <version>1.0.0</version>
+  <packaging>maven-plugin</packaging>
+
+  <name>pjacoco-maven-plugin</name>
+  <description>Wires the pjacoco -javaagent for per-test coverage (mirrors jacoco:prepare-agent).</description>
+
+  <properties>
+    <maven.compiler.release>8</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.version>3.9.9</maven.version>
+    <pjacoco.agent.version>1.0.0</pjacoco.agent.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.maven</groupId>
+      <artifactId>maven-plugin-api</artifactId>
+      <version>${maven.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.maven</groupId>
+      <artifactId>maven-core</artifactId>
+      <version>${maven.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.maven.plugin-tools</groupId>
+      <artifactId>maven-plugin-annotations</artifactId>
+      <version>3.13.1</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- Bundled so the agent jar appears in the plugin's artifact map at runtime (like jacoco). -->
+    <dependency>
+      <groupId>io.pjacoco</groupId>
+      <artifactId>pjacoco-agent</artifactId>
+      <version>${pjacoco.agent.version}</version>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-plugin-plugin</artifactId>
+        <version>3.13.1</version>
+        <configuration>
+          <goalPrefix>pjacoco</goalPrefix>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

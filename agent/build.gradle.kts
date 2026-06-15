@@ -2,6 +2,7 @@ plugins {
     java
     jacoco
     id("com.gradleup.shadow") version "8.3.5"
+    `maven-publish`
 }
 
 jacoco { toolVersion = "0.8.12" }
@@ -34,6 +35,7 @@ tasks.test { useJUnitPlatform() }
 
 tasks.shadowJar {
     archiveFileName.set("jacocoagent-parallel.jar")
+    archiveClassifier.set("")   // publish as the primary io.pjacoco:pjacoco-agent jar (no "all" classifier)
     // Self-contained agent (spec §3): relocate the embedded jacoco-core + byte-buddy so the agent
     // cannot clash with the same libraries on the target app's classpath. The jacoco-internal hook
     // matchers use suffix matching (nameEndsWith) so they resolve the relocated classes here AND the
@@ -213,5 +215,21 @@ tasks.named<org.gradle.testing.jacoco.tasks.JacocoReport>("jacocoTestReport") {
         xml.required.set(true)
         html.required.set(true)
         csv.required.set(false)
+    }
+}
+
+// ---- publishing: the agent is published as its SHADED jar (relocated jacoco-core + byte-buddy) so
+// consumers/plugins resolving io.pjacoco:pjacoco-agent get the self-contained -javaagent, not the
+// unshaded jar. (Maven Central metadata/signing is layered on in the publishing phase.)
+publishing {
+    publications {
+        create<MavenPublication>("agent") {
+            artifactId = "pjacoco-agent"
+            artifact(tasks.shadowJar)
+            pom {
+                name.set("pjacoco-agent")
+                description.set("Per-test coverage Java agent for parallel out-of-process black-box suites.")
+            }
+        }
     }
 }
