@@ -65,7 +65,9 @@ public class PrepareAgentMojo extends AbstractMojo {
                     + " in the plugin's dependencies. Ensure it is published (e.g. mavenLocal).");
         }
 
-        String agentArg = "-javaagent:" + agent.getFile().getAbsolutePath() + "=" + options();
+        // Quote the -javaagent arg (like jacoco:prepare-agent) so a space in the jar path or destfile
+        // does not make surefire split it into multiple JVM args.
+        String agentArg = "\"-javaagent:" + agent.getFile().getAbsolutePath() + "=" + options() + "\"";
         String controlUrlArg = "-Dpjacoco.control-url=http://127.0.0.1:" + port;
         String composed = agentArg + " " + controlUrlArg;
 
