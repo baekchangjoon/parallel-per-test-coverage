@@ -28,7 +28,7 @@ dependencies {
 // separate.
 pjacoco {
     port.set(6330)
-    includes.set(listOf("com.sample.Calc"))
+    includes.set(listOf("com.sample.Alpha", "com.sample.Beta"))
     attachTo.set(listOf("test"))
 }
 

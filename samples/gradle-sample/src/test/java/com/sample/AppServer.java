@@ -7,16 +7,26 @@ import javax.servlet.http.HttpServletResponse;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.servlet.ServletHandler;
 
-/** Tiny embedded servlet app under test, shared by the sample's test classes. */
-final class CalcServer {
+/** Embedded app with two endpoints, each exercising a DIFFERENT SUT class (Alpha vs Beta). */
+final class AppServer {
     private Server server;
     int port;
 
-    public static final class CalcServlet extends HttpServlet {
-        private final Calc calc = new Calc();
+    public static final class AlphaServlet extends HttpServlet {
+        private final Alpha alpha = new Alpha();
         @Override
         protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-            calc.classify(Integer.parseInt(req.getParameter("n")));
+            alpha.hit(5);
+            resp.setStatus(200);
+            resp.getWriter().write("ok");
+        }
+    }
+
+    public static final class BetaServlet extends HttpServlet {
+        private final Beta beta = new Beta();
+        @Override
+        protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            beta.hit(true);
             resp.setStatus(200);
             resp.getWriter().write("ok");
         }
@@ -25,7 +35,8 @@ final class CalcServer {
     void start() throws Exception {
         server = new Server(0);
         ServletHandler h = new ServletHandler();
-        h.addServletWithMapping(CalcServlet.class, "/run");
+        h.addServletWithMapping(AlphaServlet.class, "/alpha");
+        h.addServletWithMapping(BetaServlet.class, "/beta");
         server.setHandler(h);
         server.start();
         port = server.getURI().getPort();

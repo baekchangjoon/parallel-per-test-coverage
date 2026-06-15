@@ -91,13 +91,16 @@ jobs:
           :gradle-plugin:publishToMavenLocal
       - name: Run the gradle sample (parallel REST Assured + JUnit 4)
         run: ./gradlew --no-daemon -p samples/gradle-sample test
-      - name: Assert per-test coverage was produced
+      - name: Assert per-test coverage + isolation
         run: |
-          for t in "OwnerRestAssuredIT#negativeBranch" "OwnerRestAssuredIT#positiveBranch" "CalcJUnit4Test#classifies"; do
+          # The two parallel REST Assured tests hit DIFFERENT SUT classes (Alpha vs Beta), so
+          # classCount=1 each proves no cross-contamination: a leak would make the absorbing test's
+          # .exec record both classes (classCount=2).
+          for t in "OwnerRestAssuredIT#alphaOnly" "OwnerRestAssuredIT#betaOnly" "AlphaJUnit4Test#hitsAlpha"; do
             test -s "samples/gradle-sample/build/pjacoco/$t.exec" \
               || { echo "::error::missing $t.exec"; exit 1; }
             grep -q '"classCount":1' "samples/gradle-sample/build/pjacoco/$t.json" \
-              || { echo "::error::$t did not record Calc coverage"; exit 1; }
+              || { echo "::error::$t did not record exactly its own SUT class (isolation/routing failure)"; exit 1; }
           done
 
   # AC3: the Maven plugin + the maven-sample consumer, end-to-end, against locally published artifacts.
