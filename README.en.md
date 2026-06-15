@@ -255,4 +255,11 @@ time-based TTL eviction, JMX, backend upload.
 
 ## License
 
-[MIT](LICENSE) © 2026 baekchangjoon
+The project's own code is [MIT](LICENSE) © 2026 baekchangjoon.
+
+> **Distributed agent jar notice**: the `-javaagent` jar (`io.pjacoco:pjacoco-agent`) **embeds**
+> **JaCoCo core (EPL-2.0)** and **Byte Buddy (Apache-2.0)**, relocated under `io.pjacoco.shaded.*`. Each
+> component stays under its own license (it is NOT relicensed as MIT) and its original notices
+> (`about.html`, `META-INF/NOTICE`, …) are preserved inside the jar. Full details in
+> [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md). (Datadog `dd-trace-java`: **technique borrowed,
+> no code used**.)

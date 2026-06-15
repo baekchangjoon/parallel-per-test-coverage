@@ -265,4 +265,10 @@ TTL 축출, JMX, 백엔드 업로드.
 
 ## 라이선스
 
-[MIT](LICENSE) © 2026 baekchangjoon
+프로젝트 자체 코드는 [MIT](LICENSE) © 2026 baekchangjoon.
+
+> **배포 에이전트 jar 고지**: `-javaagent` jar(`io.pjacoco:pjacoco-agent`)에는 **JaCoCo core(EPL-2.0)** 와
+> **Byte Buddy(Apache-2.0)** 가 `io.pjacoco.shaded.*` 로 relocate되어 임베드됩니다. 각 컴포넌트는 자신의
+> 라이선스로 유지되며(MIT로 재라이선스되지 않음), jar 내부에 원 고지(`about.html`·`META-INF/NOTICE` 등)가
+> 보존됩니다. 전체 내역은 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md) 참고. (Datadog `dd-trace-java`는
+> **패턴만 차용**했고 코드는 사용하지 않았습니다.)
