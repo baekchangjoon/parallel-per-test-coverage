@@ -12,6 +12,21 @@ allprojects {
         (options as StandardJavadocDocletOptions).addStringOption("Xdoclint:none", "-quiet")
     }
 
+    // CI runtime-JDK matrix: fork the test JVM on a specific JDK via a toolchain when -PtestJavaVersion
+    // is set, so the Java 8-compatible modules can be exercised on JDK 8/11 while Gradle itself runs on
+    // a newer JDK. (Condy fixtures are major>=55 and cannot load on JDK 8 — those tasks aren't run there.)
+    val testJavaVersion = providers.gradleProperty("testJavaVersion")
+    pluginManager.withPlugin("java") {
+        if (testJavaVersion.isPresent) {
+            val toolchains = extensions.getByType<JavaToolchainService>()
+            tasks.withType<Test>().configureEach {
+                javaLauncher.set(toolchains.launcherFor {
+                    languageVersion.set(JavaLanguageVersion.of(testJavaVersion.get().toInt()))
+                })
+            }
+        }
+    }
+
     // Shared publication metadata + (credentials-gated) signing for every module that publishes.
     // Maven Central requires the POM metadata below + signatures; the actual Central Portal upload is
     // wired in the release workflow and only runs when the publishing secrets are present.

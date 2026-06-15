@@ -1,7 +1,6 @@
 name: ci
 
-# Run the full test suite (unit + in-process integration + real-agent e2e: javax + jakarta) and measure coverage
-# on every PR to main and on every push/merge to main.
+# Full suite across the JDK x JUnit matrix on every PR to main and every push/merge to main.
 on:
   pull_request:
     branches: [main]
@@ -16,52 +15,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  # Build + run everything on each modern JDK; the condy fixture's bytecode level tracks the JDK so the
+  # CondyProbeArrayStrategy (Java 11+) path is exercised at 11/17/21. JUnit 4 and 5 are both covered by
+  # the testkit-junit4 / testkit-junit5 module tests.
+  gradle:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ["11", "17", "21"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+          cache: gradle
+      - name: Build + test (all modules + agent e2e suites)
+        run: >
+          ./gradlew --no-daemon
+          test
+          :agent:integrationTest :agent:e2eTest :agent:e2eJakartaTest :agent:e2eCondyTest
+          :agent:jacocoTestReport
+          -PcondyRelease=${{ matrix.jdk }}
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-jdk${{ matrix.jdk }}
+          path: |
+            **/build/reports/tests/
+            agent/build/reports/jacoco/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Java 8 runtime compatibility of the dependency artifacts users add (the testkit). Gradle runs on a
+  # modern JDK; the test JVMs fork on JDK 8 via a toolchain (foojay-provisioned). The agent/junit5 test
+  # harnesses use Mockito 5 (Java 11+) so they are not run here; their Java 8 source compatibility is
+  # enforced by sourceCompatibility and exercised on the matrix above.
+  jdk8-compat:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up JDK 17 (runs Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Run testkit tests on a JDK 8 toolchain
+        run: >
+          ./gradlew --no-daemon
+          :testkit-core:test :testkit-junit4:test :testkit-restassured:test
+          -PtestJavaVersion=8
 
+  # AC3: the Maven plugin + the maven-sample consumer, end-to-end, against locally published artifacts.
+  maven-sample:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
-
-      - name: Run all tests + coverage
-        run: ./gradlew --no-daemon :agent:test :agent:integrationTest :agent:e2eTest :agent:e2eJakartaTest :agent:e2eCondyTest :agent:jacocoTestReport
-
-      - name: Coverage summary
-        if: always()
+      - name: Publish agent + testkit to mavenLocal
+        run: ./gradlew --no-daemon :agent:publishToMavenLocal :testkit-core:publishToMavenLocal
+      - name: Install the maven plugin
+        run: mvn -B -f maven-plugin/pom.xml install -DskipTests
+      - name: Run the maven sample (produces per-test .exec)
+        run: mvn -B -f samples/maven-sample/pom.xml test
+      - name: Assert per-test coverage was produced
         run: |
-          REPORT=agent/build/reports/jacoco/test/jacocoTestReport.xml
-          {
-            echo "## Test results & coverage"
-            echo ""
-            echo "Suites: unit (\`test\`) + in-process (\`integrationTest\`) + real-agent e2e (\`e2eTest\` javax + \`e2eJakartaTest\` jakarta)."
-            if [ -f "$REPORT" ]; then
-              line=$(grep -oE '<counter type="LINE"[^/]*/>' "$REPORT" | tail -1)
-              missed=$(echo "$line" | grep -oE 'missed="[0-9]+"' | grep -oE '[0-9]+')
-              covered=$(echo "$line" | grep -oE 'covered="[0-9]+"' | grep -oE '[0-9]+')
-              total=$((missed + covered))
-              pct=$(awk "BEGIN { if ($total > 0) printf \"%.1f\", 100 * $covered / $total; else print 0 }")
-              echo ""
-              echo "Agent line coverage (\`io.pjacoco.agent.*\`, from unit + in-process suites): **${pct}%** (${covered}/${total} lines)."
-              echo ""
-              echo "> e2e runs the shaded agent in a forked JVM and is excluded from self-coverage; it still gates CI."
-            else
-              echo ""
-              echo "_Coverage report not produced (a test task likely failed before \`jacocoTestReport\`)._"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload test & coverage reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: reports
-          path: |
-            agent/build/reports/tests/
-            agent/build/reports/jacoco/
-          if-no-files-found: ignore
-          retention-days: 14
+          test -s samples/maven-sample/target/pjacoco/T1.exec \
+            || { echo "::error::maven-sample did not produce T1.exec"; exit 1; }
+          grep -q '"classCount":1' samples/maven-sample/target/pjacoco/T1.json \
+            || { echo "::error::T1 did not record Calc coverage"; exit 1; }
