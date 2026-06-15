@@ -76,11 +76,17 @@ Releases are published by the `release` GitHub Actions workflow (manual run): Ac
 
 ## Quick start
 
+> 💡 **The easiest path is [Use as a dependency / plugin (recommended)](#use-as-a-dependency--plugin-recommended)** —
+> the plugin attaches the agent for you and the testkit handles the boundary/propagation. **Complete,
+> copy-and-run examples**: [`samples/gradle-sample`](samples/gradle-sample) ·
+> [`samples/maven-sample`](samples/maven-sample). The steps below are the **low-level path** of driving
+> the agent by hand.
+
 ```bash
 # 1) Build the agent jar (JDK 17+ to run Gradle; the artifact targets Java 8)
 #    Or grab a pre-built jar from "Download" above.
-JAVA_HOME=<jdk17+> ./gradlew shadowJar
-#   → build/libs/jacocoagent-parallel.jar
+JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar
+#   → agent/build/libs/jacocoagent-parallel.jar
 
 # 2) Attach to the target app
 java -javaagent:jacocoagent-parallel.jar=destfile=coverage,port=6310,includes=com.example.* \
@@ -178,13 +184,13 @@ as siblings under one parent directory.
 # Run from the directory that contains both clones (siblings).
 
 # 1) Build the coverage agent (JDK 17+ to run Gradle; the jar itself targets Java 8).
-( cd parallel-per-test-coverage && JAVA_HOME=<jdk17+> ./gradlew shadowJar )
-#   → parallel-per-test-coverage/build/libs/jacocoagent-parallel.jar
+( cd parallel-per-test-coverage && JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar )
+#   → parallel-per-test-coverage/agent/build/libs/jacocoagent-parallel.jar
 
 # 2) Build spring-petclinic from source, then start it with the agent attached.
 #    includes = the app's packages; the Spring Boot 4 jakarta.servlet / Tomcat 11 stack is supported.
 ( cd spring-petclinic && ./gradlew bootJar )
-java -javaagent:"$PWD/parallel-per-test-coverage/build/libs/jacocoagent-parallel.jar=destfile=/tmp/petclinic-coverage,port=6310,includes=org.springframework.samples.petclinic.*" \
+java -javaagent:"$PWD/parallel-per-test-coverage/agent/build/libs/jacocoagent-parallel.jar=destfile=/tmp/petclinic-coverage,port=6310,includes=org.springframework.samples.petclinic.*" \
      -jar "$PWD/spring-petclinic/build/libs/spring-petclinic-4.0.0-SNAPSHOT.jar"
 
 # 3) In another shell, run the parallel black-box suite with per-test coverage routing on.
@@ -220,21 +226,36 @@ This repo verifies itself rigorously; CI (`ci.yml`) runs everything on PRs and p
 | **version canary** (`jacoco-canary.yml`) | hook compatibility across jacoco **0.8.11/0.8.12/0.8.13** |
 | **coverage** | `jacocoTestReport` measures agent self-coverage + CI summary/artifact |
 
+CI runs the agent suite on a **JDK 11/17/21 matrix** (with `-PcondyRelease` to exercise the Condy
+path), plus separate jobs for JDK 8 testkit compatibility, `samples/gradle-sample` (AC1 parallel REST
+Assured + AC4 JUnit 4), and `samples/maven-sample` (AC3). The testkit/plugin modules each have their
+own unit/functional tests.
+
 ```bash
-JAVA_HOME=<jdk17+> ./gradlew test integrationTest e2eTest jacocoTestReport   # full suite
-JAVA_HOME=<jdk17+> scripts/mutation-e2e.sh                                    # mutation campaign
+# Agent full suite (multi-module: tasks are prefixed with :agent:)
+JAVA_HOME=<jdk17+> ./gradlew :agent:test :agent:integrationTest :agent:e2eTest \
+                              :agent:e2eJakartaTest :agent:e2eCondyTest :agent:jacocoTestReport
+JAVA_HOME=<jdk17+> ./gradlew test            # every module's unit/functional tests (testkit + plugins)
+JAVA_HOME=<jdk17+> ./gradlew -p samples/gradle-sample test   # plugin+testkit end-to-end sample
+JAVA_HOME=<jdk17+> scripts/mutation-e2e.sh   # mutation campaign
 ```
 
-## Layout
+## Layout (Gradle multi-module)
 
 ```
-src/main/java/io/pjacoco/agent/   # the agent (Bootstrap, ProbeInstrumentation, CoverageBridge,
-                                  #            TestStore(Registry), ControlEndpoint, inbound SPI …)
-spike/                            # M4 instrumentation-mechanism validation PoC
-scripts/mutation-e2e.sh           # mutation-campaign harness
-docs/superpowers/specs|plans/     # design spec · implementation plan (TDD)
-docs/research/                    # dd-trace-java analysis · spike validation · e2e mutation report
-.github/workflows/                # ci.yml · jacoco-canary.yml
+agent/                  io.pjacoco:pjacoco-agent             # -javaagent (Bootstrap, ProbeInstrumentation,
+                                                             #   CoverageBridge, ControlEndpoint, inbound SPI …)
+testkit-core/           io.pjacoco:pjacoco-testkit           # testkit core (control API, zero deps, Java 8)
+testkit-junit5/         io.pjacoco:pjacoco-testkit-junit5    # PjacocoExtension
+testkit-junit4/         io.pjacoco:pjacoco-testkit-junit4    # PjacocoRule
+testkit-restassured/    io.pjacoco:pjacoco-testkit-restassured  # baggage filter
+gradle-plugin/          id "io.pjacoco.gradle"               # resolve the agent + wire -javaagent
+maven-plugin/           io.pjacoco:pjacoco-maven-plugin      # prepare-agent (Maven builds)
+samples/                gradle-sample · maven-sample         # complete runnable end-to-end examples
+spike/                  # M4 instrumentation-mechanism validation PoC (standalone build)
+scripts/mutation-e2e.sh # mutation-campaign harness
+docs/                   # design specs · publishing guide · research reports
+.github/workflows/      # ci.yml (matrix) · release.yml (one-click release) · jacoco-canary.yml
 ```
 
 ## Scope
@@ -247,6 +268,13 @@ time-based TTL eviction, JMX, backend upload.
 
 > The end goal is a drop-in replacement for the serial JaCoCo collection layer of a Test Impact
 > Analysis pipeline.
+
+## Design docs
+
+- Distribution & ergonomics (testkit + plugins): [`docs/superpowers/specs/2026-06-16-pjacoco-ergonomics-design.md`](docs/superpowers/specs/2026-06-16-pjacoco-ergonomics-design.md)
+- Agent design spec (v1): [`docs/superpowers/specs/2026-06-13-parallel-jacoco-design.md`](docs/superpowers/specs/2026-06-13-parallel-jacoco-design.md)
+- Publishing guide (release + secrets): [`docs/PUBLISHING.md`](docs/PUBLISHING.md)
+- Third-party licenses: [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)
 
 ## References
 
