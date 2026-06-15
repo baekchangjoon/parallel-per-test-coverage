@@ -1,5 +1,6 @@
 plugins {
     java
+    `maven-publish`
 }
 
 // Java 8 compatible: test suites may run on JDK 8, and the control-plane HTTP uses
@@ -19,3 +20,16 @@ dependencies {
 }
 
 tasks.test { useJUnitPlatform() }
+
+publishing {
+    publications {
+        create<MavenPublication>("library") {
+            artifactId = "pjacoco-testkit"
+            from(components["java"])
+            pom {
+                name.set("pjacoco-testkit")
+                description.set("pjacoco test-side control API (framework-neutral).")
+            }
+        }
+    }
+}

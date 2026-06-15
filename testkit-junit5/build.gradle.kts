@@ -1,5 +1,6 @@
 plugins {
     `java-library`
+    `maven-publish`
 }
 
 java {
@@ -21,3 +22,16 @@ dependencies {
 }
 
 tasks.test { useJUnitPlatform() }
+
+publishing {
+    publications {
+        create<MavenPublication>("library") {
+            artifactId = "pjacoco-testkit-junit5"
+            from(components["java"])
+            pom {
+                name.set("pjacoco-testkit-junit5")
+                description.set("pjacoco JUnit 5 extension (per-test coverage boundary).")
+            }
+        }
+    }
+}
