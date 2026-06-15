@@ -60,10 +60,23 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 > **핵심 검증**: 한 번의 계측·실행에서 per-test 프로브 배열이 jacoco 전역 배열과 **byte 단위로 동일**
 > 함을 확인했습니다(`GoldenEquivalenceIT`). 2스레드 동시 실행 격리도 입증(`spike/`, e2e).
 
+## 다운로드
+
+직접 빌드하지 않고 [**Releases**](../../releases/latest) 페이지에서 사전 빌드된 에이전트 jar를 받을 수 있습니다.
+
+```bash
+# 최신 릴리스의 jar 받기 (예: v0.1.0 → jacocoagent-parallel-0.1.0.jar)
+# Releases 페이지에서 jacocoagent-parallel-<버전>.jar 와 .sha256 체크섬을 내려받으세요.
+sha256sum -c jacocoagent-parallel-<버전>.jar.sha256   # 무결성 검증
+```
+
+릴리스는 GitHub Actions의 `release` 워크플로(수동 실행)로 발행됩니다 — Actions → "release" → "Run workflow".
+
 ## 빠른 시작
 
 ```bash
 # 1) 에이전트 jar 빌드 (JDK 17+ 필요 — Gradle 실행용; 산출물은 Java 8 호환)
+#    또는 위 "다운로드"에서 사전 빌드된 jar를 받으세요.
 JAVA_HOME=<jdk17+> ./gradlew shadowJar
 #   → build/libs/jacocoagent-parallel.jar
 
