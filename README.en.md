@@ -63,60 +63,12 @@ Test harness                          Target app JVM  (-javaagent:jacocoagent-pa
 > **Keystone check**: in a single instrument+run, the per-test probe array equals jacoco's global array
 > **byte-for-byte** (`GoldenEquivalenceIT`); concurrent isolation is proven too (`spike/`, e2e).
 
-## Download
+## Quick start (recommended)
 
-Grab a pre-built agent jar from the [**Releases**](../../releases/latest) page instead of building it yourself.
-
-```bash
-# Download jacocoagent-parallel-<version>.jar and its .sha256 checksum from the Releases page.
-sha256sum -c jacocoagent-parallel-<version>.jar.sha256   # verify integrity
-```
-
-Releases are published by the `release` GitHub Actions workflow (manual run): Actions → "release" → "Run workflow".
-
-## Quick start
-
-> 💡 **The easiest path is [Use as a dependency / plugin (recommended)](#use-as-a-dependency--plugin-recommended)** —
-> the plugin attaches the agent for you and the testkit handles the boundary/propagation. **Complete,
-> copy-and-run examples**: [`samples/gradle-sample`](samples/gradle-sample) ·
-> [`samples/maven-sample`](samples/maven-sample). The steps below are the **low-level path** of driving
-> the agent by hand.
-
-```bash
-# 1) Build the agent jar (JDK 17+ to run Gradle; the artifact targets Java 8)
-#    Or grab a pre-built jar from "Download" above.
-JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar
-#   → agent/build/libs/jacocoagent-parallel.jar
-
-# 2) Attach to the target app
-java -javaagent:jacocoagent-parallel.jar=destfile=coverage,port=6310,includes=com.example.* \
-     -jar your-app.jar
-```
-
-From the test harness:
-
-```bash
-curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/start?testId=T1&shardId=s1'
-curl -H 'baggage: test.id=T1' 'http://app/api/...'          # propagate testId per request (OTel Baggage)
-curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/stop?testId=T1&result=passed'
-java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html out/T1
-```
-
-### Agent options
-
-| option | meaning | default |
-|---|---|---|
-| `destfile` | output **directory** (many per-test files) | `coverage` |
-| `includes`/`excludes` | instrumentation scope (jacoco `WildcardMatcher`) | `*` / `` |
-| `port`/`address` | control endpoint binding | `6310` / `127.0.0.1` (loopback) |
-| `lenient` | auto-register unknown testIds (default strict: not recorded) | `false` |
-| `commitSha` | written to the manifest header (or env `PJACOCO_COMMIT`) | — |
-
-## Use as a dependency / plugin (recommended)
-
-Instead of downloading the jar and hand-wiring `-javaagent`, use the **build plugin + testkit**. The
-plugin resolves the agent and injects `-javaagent`; the testkit owns the per-test boundary (start/stop)
-and `baggage: test.id=...` propagation.
+Add the build **plugin + testkit**. The plugin resolves the agent and connects it via `-javaagent`; the
+testkit owns the per-test boundary (start/stop) and `baggage: test.id=...` propagation. Copy-and-run
+examples: [`samples/gradle-sample`](samples/gradle-sample) · [`samples/maven-sample`](samples/maven-sample)
+([how to run](samples/README.md)).
 
 **Gradle** (`build.gradle.kts`):
 
@@ -159,10 +111,51 @@ class OwnerBlackBoxIT {
 </plugin>
 ```
 
-> Coordinates: agent `io.pjacoco:pjacoco-agent`, testkit `io.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
+> Artifact names: agent `io.pjacoco:pjacoco-agent`, testkit `io.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
 > Gradle plugin id `io.pjacoco.gradle`, Maven plugin `io.pjacoco:pjacoco-maven-plugin`. Public release
 > (Maven Central / Gradle Plugin Portal) is pending; see [`docs/PUBLISHING.md`](docs/PUBLISHING.md) for
 > local validation today.
+
+## Using the agent directly (low level)
+
+You can also drive the agent jar with `-javaagent` yourself, without the plugin.
+
+First get the jar — from [Releases](../../releases/latest), or build it:
+
+```bash
+# Download a specific version (find the version on the Releases page)
+wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.0.0/jacocoagent-parallel-1.0.0.jar
+# Or grab the latest release with the gh CLI
+gh release download --repo baekchangjoon/parallel-per-test-coverage --pattern 'jacocoagent-parallel-*.jar'
+# Or build it (JDK 17+ to run Gradle; the artifact targets Java 8)
+JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar    # → agent/build/libs/jacocoagent-parallel.jar
+```
+
+Attach it to the target app, then drive the control endpoint from the test harness:
+
+```bash
+# 1) Attach to the target app
+java -javaagent:jacocoagent-parallel.jar=destfile=coverage,port=6310,includes=com.example.* \
+     -jar your-app.jar
+
+# 2) Open / propagate / close the boundary
+curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/start?testId=T1&shardId=s1'
+curl -H 'baggage: test.id=T1' 'http://app/api/...'          # propagate testId per request (OTel Baggage)
+curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/stop?testId=T1&result=passed'
+
+# 3) Report with standard jacoco tooling
+java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html out/T1
+```
+
+### Agent options
+
+| option | meaning | default |
+|---|---|---|
+| `destfile` | output **directory** (many per-test files) | `coverage` |
+| `includes`/`excludes` | instrumentation scope (jacoco `WildcardMatcher`) | `*` / `` |
+| `port`/`address` | control endpoint binding | `6310` / `127.0.0.1` (loopback) |
+| `autoRegister` | record a testId that arrives without a prior `start` (default strict: not recorded) | `false` |
+| `commitSha` | written to the manifest header (or env `PJACOCO_COMMIT`) | — |
 
 ## Output
 
@@ -215,21 +208,21 @@ java -jar jacococli.jar report "/tmp/petclinic-coverage/OwnerApiBlackBoxIT#getOw
 
 ## Testing & verification
 
-This repo verifies itself rigorously; CI (`ci.yml`) runs everything on PRs and pushes to main.
+CI (`ci.yml`) runs the following on PRs and pushes to main.
 
 | layer | what |
 |---|---|
 | **unit** (`test`) | per-component in-process tests |
 | **in-process integration** (`integrationTest`) | `GoldenEquivalenceIT` (vanilla byte-equivalence), `ProbeRoutingIT` |
 | **e2e** (`e2eTest`) | real `-javaagent` + embedded Jetty + HTTP black-box spec acceptance (isolation, sidecar, manifest, strict mode, untagged, retry, concurrency) |
-| **mutation** (`scripts/mutation-e2e.sh`) | inject 9 mutants into the agent SUT → measure e2e KILLED/SURVIVED. **9/9 KILLED** (proves the e2e catches real regressions) |
+| **mutation** (`scripts/mutation-e2e.sh`) | inject 9 mutants into the agent SUT → measure e2e KILLED/SURVIVED |
 | **version canary** (`jacoco-canary.yml`) | hook compatibility across jacoco **0.8.11/0.8.12/0.8.13** |
 | **coverage** | `jacocoTestReport` measures agent self-coverage + CI summary/artifact |
 
 CI runs the agent suite on a **JDK 11/17/21 matrix** (with `-PcondyRelease` to exercise the Condy
-path), plus separate jobs for JDK 8 testkit compatibility, `samples/gradle-sample` (AC1 parallel REST
-Assured + AC4 JUnit 4), and `samples/maven-sample` (AC3). The testkit/plugin modules each have their
-own unit/functional tests.
+path), plus separate jobs for JDK 8 testkit compatibility, `samples/gradle-sample` (parallel REST
+Assured + JUnit 4), and `samples/maven-sample`. The testkit/plugin modules each have their own
+unit/functional tests.
 
 ```bash
 # Agent full suite (multi-module: tasks are prefixed with :agent:)

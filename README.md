@@ -60,67 +60,12 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 > **핵심 검증**: 한 번의 계측·실행에서 per-test 프로브 배열이 jacoco 전역 배열과 **byte 단위로 동일**
 > 함을 확인했습니다(`GoldenEquivalenceIT`). 2스레드 동시 실행 격리도 입증(`spike/`, e2e).
 
-## 다운로드
+## 빠른 시작 (권장)
 
-직접 빌드하지 않고 [**Releases**](../../releases/latest) 페이지에서 사전 빌드된 에이전트 jar를 받을 수 있습니다.
-
-```bash
-# 최신 릴리스의 jar 받기 (예: v1.0.0 → jacocoagent-parallel-1.0.0.jar)
-# Releases 페이지에서 jacocoagent-parallel-<버전>.jar 와 .sha256 체크섬을 내려받으세요.
-sha256sum -c jacocoagent-parallel-<버전>.jar.sha256   # 무결성 검증
-```
-
-릴리스는 GitHub Actions의 `release` 워크플로(수동 실행)로 발행됩니다 — Actions → "release" → "Run workflow".
-
-## 빠른 시작
-
-> 💡 **가장 쉬운 길은 [의존성/플러그인으로 사용 (권장)](#의존성플러그인으로-사용-권장)** 입니다 — 플러그인이 에이전트를
-> 자동으로 붙이고 테스트킷이 경계/전파를 처리합니다. **바로 복사해 돌려볼 수 있는 완전한 예제**:
-> [`samples/gradle-sample`](samples/gradle-sample) · [`samples/maven-sample`](samples/maven-sample).
-> 아래는 플러그인 없이 에이전트를 직접 다루는 **저수준 경로**입니다.
-
-```bash
-# 1) 에이전트 jar 빌드 (JDK 17+ 필요 — Gradle 실행용; 산출물은 Java 8 호환)
-#    또는 위 "다운로드"에서 사전 빌드된 jar를 받으세요.
-JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar
-#   → agent/build/libs/jacocoagent-parallel.jar
-
-# 2) 대상 앱에 부착
-java -javaagent:jacocoagent-parallel.jar=destfile=coverage,port=6310,includes=com.example.* \
-     -jar your-app.jar
-```
-
-테스트 하니스에서:
-
-```bash
-# 테스트 시작
-curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/start?testId=T1&shardId=s1'
-
-# 요청마다 baggage 헤더로 testId 전파 (OTel Baggage 규약)
-curl -H 'baggage: test.id=T1' 'http://app/api/...'
-
-# 테스트 종료 → coverage/T1.exec + coverage/T1.json flush
-curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/stop?testId=T1&result=passed'
-
-# 이후 표준 jacoco 도구로 리포트
-java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html out/T1
-```
-
-### 에이전트 옵션
-
-| 옵션 | 의미 | 기본 |
-|---|---|---|
-| `destfile` | 출력 **디렉터리**(per-test 파일 다수) | `coverage` |
-| `includes`/`excludes` | 계측 대상(WildcardMatcher, jacoco와 동일) | `*` / `` |
-| `port`/`address` | 제어 엔드포인트 바인딩 | `6310` / `127.0.0.1`(loopback) |
-| `lenient` | 미등록 testId 자동 등록(기본은 엄격: 미기록) | `false` |
-| `commitSha` | manifest 헤더에 기록(또는 env `PJACOCO_COMMIT`) | — |
-
-## 의존성/플러그인으로 사용 (권장)
-
-jar를 직접 다운로드해 `-javaagent`를 손으로 붙이는 대신, **빌드 플러그인 + 테스트킷**으로 쓸 수 있습니다.
-플러그인이 에이전트를 자동으로 받아 `-javaagent`를 꽂고, 테스트킷이 테스트별 경계(start/stop)와
-`baggage: test.id=...` 전파를 담당합니다.
+빌드 **플러그인 + 테스트킷**을 추가하는 방법입니다. 플러그인이 에이전트를 자동으로 받아 `-javaagent`로
+연결하고, 테스트킷이 테스트별 경계(start/stop)와 `baggage: test.id=...` 전파를 담당합니다. 바로 복사해
+돌려볼 수 있는 예제: [`samples/gradle-sample`](samples/gradle-sample) · [`samples/maven-sample`](samples/maven-sample)
+([실행 방법](samples/README.md)).
 
 **Gradle** (`build.gradle.kts`):
 
@@ -145,8 +90,8 @@ class OwnerBlackBoxIT {
 }
 ```
 
-> 별도 프로세스 서버라면 `attachTo`는 테스트 태스크에 두고(testkit가 control-url 받음),
-> 서버 기동에는 `pjacoco.agentJvmArg`(노출되는 프로퍼티)를 한 줄 꽂으면 됩니다. JUnit 4는
+> 별도 프로세스 서버라면 `attachTo`는 테스트 태스크에 두고(테스트킷이 control-url 을 받음), 서버 기동
+> 명령에는 노출된 `pjacoco.agentJvmArg` 프로퍼티를 한 줄 추가하면 됩니다. JUnit 4는
 > `io.pjacoco:pjacoco-testkit-junit4`의 `@Rule PjacocoRule`을 쓰세요.
 
 **Maven** (`pom.xml`): `prepare-agent`가 `pjacoco.argLine`을 세팅하고 surefire가 이를 참조합니다.
@@ -163,9 +108,52 @@ class OwnerBlackBoxIT {
 </plugin>
 ```
 
-> 산출물 좌표: 에이전트 `io.pjacoco:pjacoco-agent`, 테스트킷 `io.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
+> 아티팩트 이름: 에이전트 `io.pjacoco:pjacoco-agent`, 테스트킷 `io.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
 > Gradle 플러그인 id `io.pjacoco.gradle`, Maven 플러그인 `io.pjacoco:pjacoco-maven-plugin`. 공개 배포(Maven
 > Central / Gradle Plugin Portal)는 준비 중이며, 로컬 검증 방법은 [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
+
+## 에이전트 직접 사용 (저수준)
+
+플러그인 없이 에이전트 jar를 직접 `-javaagent`로 다룰 수도 있습니다.
+
+먼저 jar를 준비합니다 — [Releases](../../releases/latest)에서 받거나 직접 빌드합니다:
+
+```bash
+# 특정 버전 받기 (버전은 Releases 페이지에서 확인)
+wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.0.0/jacocoagent-parallel-1.0.0.jar
+# 또는 gh CLI로 최신 릴리스에서 받기
+gh release download --repo baekchangjoon/parallel-per-test-coverage --pattern 'jacocoagent-parallel-*.jar'
+# 또는 직접 빌드 (JDK 17+ 필요; 산출물은 Java 8 호환)
+JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar    # → agent/build/libs/jacocoagent-parallel.jar
+```
+
+대상 앱에 부착하고, 테스트 하니스에서 제어 엔드포인트를 호출합니다:
+
+```bash
+# 1) 대상 앱에 부착
+java -javaagent:jacocoagent-parallel.jar=destfile=coverage,port=6310,includes=com.example.* \
+     -jar your-app.jar
+
+# 2) 테스트 시작
+curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/start?testId=T1&shardId=s1'
+# 요청마다 baggage 헤더로 testId 전파 (OTel Baggage 규약)
+curl -H 'baggage: test.id=T1' 'http://app/api/...'
+# 테스트 종료 → coverage/T1.exec + coverage/T1.json flush
+curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/stop?testId=T1&result=passed'
+
+# 3) 표준 jacoco 도구로 리포트
+java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html out/T1
+```
+
+### 에이전트 옵션
+
+| 옵션 | 의미 | 기본 |
+|---|---|---|
+| `destfile` | 출력 **디렉터리**(per-test 파일 다수) | `coverage` |
+| `includes`/`excludes` | 계측 대상(WildcardMatcher, jacoco와 동일) | `*` / `` |
+| `port`/`address` | 제어 엔드포인트 바인딩 | `6310` / `127.0.0.1`(loopback) |
+| `autoRegister` | start 없이 도착한 testId도 기록(기본은 strict: 미기록) | `false` |
+| `commitSha` | manifest 헤더에 기록(또는 env `PJACOCO_COMMIT`) | — |
 
 ## 산출물
 
@@ -216,19 +204,19 @@ java -jar jacococli.jar report "/tmp/petclinic-coverage/OwnerApiBlackBoxIT#getOw
 
 ## 테스트 & 검증
 
-이 저장소는 자체 검증을 매우 엄격히 합니다. CI(`ci.yml`)가 PR·main에서 전부 실행합니다.
+CI(`ci.yml`)가 PR·main에서 아래를 실행합니다.
 
 | 계층 | 내용 |
 |---|---|
 | **단위** (`test`) | 컴포넌트별 in-process 테스트 |
 | **인-프로세스 통합** (`integrationTest`) | `GoldenEquivalenceIT`(vanilla byte-동일), `ProbeRoutingIT` |
 | **E2E** (`e2eTest`) | 실제 `-javaagent` + 내장 Jetty + HTTP 블랙박스로 스펙 인수(격리·사이드카·manifest·엄격·untagged·재시도·동시성) |
-| **뮤테이션** (`scripts/mutation-e2e.sh`) | 에이전트 SUT에 9종 mutant 주입 → e2e KILLED/SURVIVED 측정. **9/9 KILLED** (e2e가 실제 회귀를 잡음을 입증) |
+| **뮤테이션** (`scripts/mutation-e2e.sh`) | 에이전트 SUT에 9종 mutant 주입 → e2e KILLED/SURVIVED 측정 |
 | **버전 카나리** (`jacoco-canary.yml`) | jacoco **0.8.11/0.8.12/0.8.13** 매트릭스로 후킹 호환성 |
 | **커버리지** | `jacocoTestReport`로 에이전트 self-coverage 측정 + CI 요약·아티팩트 |
 
 CI는 **JDK 11/17/21 매트릭스**로 에이전트 전체 스위트(+ `-PcondyRelease`로 Condy 경로)를 돌리고, 별도 잡에서
-JDK 8 testkit 호환·`samples/gradle-sample`(AC1 REST Assured 병렬 + AC4 JUnit4)·`samples/maven-sample`(AC3)을
+JDK 8 testkit 호환·`samples/gradle-sample`(REST Assured 병렬 + JUnit 4)·`samples/maven-sample`을
 검증합니다. testkit·플러그인 모듈은 각자 단위/기능 테스트를 가집니다.
 
 ```bash

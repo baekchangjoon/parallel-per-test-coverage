@@ -30,7 +30,12 @@ public final class AgentOptions {
 
     // our model (destfile reinterpreted as a directory)
     public String outputDir()   { return get("destfile", "coverage"); }
-    public boolean lenient()    { return Boolean.parseBoolean(get("lenient", "false")); }
+    /** Record coverage for a testId that arrives without a prior control-plane start (auto-create its
+     *  store). Default false (strict: such requests are ignored). Reads {@code autoRegister};
+     *  {@code lenient} is accepted as a legacy alias. */
+    public boolean autoRegister() {
+        return Boolean.parseBoolean(get("autoRegister", get("lenient", "false")));
+    }
     public String controlHost() { return get("address", "127.0.0.1"); }
     public int controlPort()    { return Integer.parseInt(get("port", "6310")); }
     public int maxStores()      { return Integer.parseInt(get("maxstores", "1000")); }
