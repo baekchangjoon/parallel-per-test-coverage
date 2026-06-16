@@ -9,7 +9,7 @@ namespace. Their original license and notice files are preserved inside the jar 
 `META-INF/maven/org.jacoco/...`). **These components remain under their own licenses and are NOT
 relicensed under MIT.**
 
-| Component | Coordinate | Version | License | Source |
+| Component | Name | Version | License | Source |
 |---|---|---|---|---|
 | JaCoCo core | `org.jacoco:org.jacoco.core` | 0.8.12 | **Eclipse Public License 2.0 (EPL-2.0)** | https://github.com/jacoco/jacoco |
 | Byte Buddy | `net.bytebuddy:byte-buddy` | 1.14.18 | Apache License 2.0 | https://github.com/raphw/byte-buddy |

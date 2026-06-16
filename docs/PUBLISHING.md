@@ -2,7 +2,7 @@
 
 The build produces these artifacts (single lockstep SemVer; bump with `-PreleaseVersion=x.y.z`):
 
-| Artifact | Coordinate | Built by | Notes |
+| Artifact | Name | Built by | Notes |
 |---|---|---|---|
 | Agent (`-javaagent`) | `io.pjacoco:pjacoco-agent` | Gradle (`:agent`) | the **shaded** jar (relocated jacoco-core + byte-buddy) |
 | Testkit core | `io.pjacoco:pjacoco-testkit` | Gradle | zero-dep, Java 8 |
@@ -24,8 +24,8 @@ The build produces these artifacts (single lockstep SemVer; bump with `-Prelease
 mvn -f maven-plugin/pom.xml install
 
 # 3) End-to-end consumers
-mvn -f samples/maven-sample/pom.xml test     # AC3: produces target/pjacoco/T1.exec
-./gradlew :gradle-plugin:test                # AC2: TestKit consumer produces build/pjacoco/T1.exec
+mvn -f samples/maven-sample/pom.xml test     # produces target/pjacoco/T1.exec
+./gradlew :gradle-plugin:test                # the TestKit consumer produces build/pjacoco/T1.exec
 ```
 
 The POM metadata (MIT license, scm, developers) and GPG signing are already configured; signing is

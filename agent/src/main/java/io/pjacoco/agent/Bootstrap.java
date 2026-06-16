@@ -29,7 +29,7 @@ public final class Bootstrap {
         Path outDir = Paths.get(options.outputDir());
         TestStoreRegistry registry = new TestStoreRegistry(
                 outDir, new ExecWriter(), metrics, log,
-                options.lenient(), options.maxStores(), new java.util.function.LongSupplier() {
+                options.autoRegister(), options.maxStores(), new java.util.function.LongSupplier() {
                     public long getAsLong() { return System.currentTimeMillis(); }
                 });
 
@@ -74,6 +74,6 @@ public final class Bootstrap {
         new ServletInboundActivator(registry, metrics, log).install(inst);
 
         log.info("agent installed (output=" + options.outputDir()
-                + ", mode=" + (options.lenient() ? "lenient" : "strict") + ")");
+                + ", mode=" + (options.autoRegister() ? "auto-register" : "strict") + ")");
     }
 }
