@@ -29,7 +29,28 @@ dependencies {
 pjacoco {
     port.set(6330)
     includes.set(listOf("com.sample.Alpha", "com.sample.Beta"))
-    attachTo.set(listOf("test"))
+    attachTo.set(listOf("test", "unitTest"))
+}
+
+// Pure-unit in-process per-test coverage demo (no servlet/HTTP): the SUT is called directly on the
+// test thread; the in-process extension (auto-registered) brackets each test. Distinct output dir.
+sourceSets {
+    create("unitTest") {
+        compileClasspath += sourceSets["main"].output
+        runtimeClasspath += sourceSets["main"].output
+    }
+}
+val unitTestImplementation by configurations.getting { extendsFrom(configurations.testImplementation.get()) }
+val unitTestRuntimeOnly by configurations.getting { extendsFrom(configurations.testRuntimeOnly.get()) }
+
+val unitTest = tasks.register<Test>("unitTest") {
+    description = "Pure-unit in-process per-test coverage demo"
+    group = "verification"
+    testClassesDirs = sourceSets["unitTest"].output.classesDirs
+    classpath = sourceSets["unitTest"].runtimeClasspath
+    useJUnitPlatform()
+    systemProperty("junit.jupiter.execution.parallel.enabled", "true")
+    systemProperty("junit.jupiter.execution.parallel.mode.default", "concurrent")
 }
 
 tasks.test {
