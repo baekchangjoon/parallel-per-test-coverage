@@ -22,6 +22,11 @@ boundary, while keeping vanilla-JaCoCo `.exec` backward compatibility. The mecha
 in-repo: `ProbeRoutingIT.firedProbesLandInActiveStore` sets `CoverageContext` directly, calls the SUT
 method directly (no servlet), and the probes route to the active store. This spec productizes that.
 
+Two adjacent additions narrow the "use it like jacoco" gap: a **whole-run aggregate mode** (§7a) that
+also emits jacoco's single whole-run `.exec`, and **JUnit 5 auto-registration** (§7b) so a unit suite
+needs no per-test annotation. (pjacoco's per-test output remains its distinguishing artifact — these
+make the *usage* closer to jacoco's, not identical.)
+
 ## 2. Non-goals
 
 - Replacing or changing the existing out-of-process / in-JVM **servlet** black-box path (HTTP control +
@@ -84,6 +89,13 @@ public final class CoverageControl {
   the best-effort wrapper; in that case it logs a warning and leaves the context unset (mirrors
   `ServletAdvice.java:29`). In normal operation `start()` registered the store so `active()` returns it
   (works in both strict and auto-register modes).
+- **Null-safety:** if `bindRegistry` was never called (registry reference null — agent classes present
+  but premain wiring did not run), `isReady()` returns false and `activate`/`deactivate` are no-ops (no
+  `NullPointerException` into test code). `deactivate` also applies the empty-store guard (§7b).
+- **Thread premise:** `activate`/the test body/`deactivate` must run on the **same thread** (the
+  `CoverageContext` ThreadLocal is per-thread). JUnit 5/4 run a test's `beforeEach`/body/`afterEach`
+  (and `starting`/`finished`) on one thread per test even under parallel execution, so the premise
+  holds; AC-IP1 records the thread id across the three phases and asserts equality as a guard.
 - `deactivate` clears the thread context and flushes the per-test `.exec` (+ sidecar json).
 - All methods are best-effort and never throw into test code. To avoid the silent-no-op trap, the
   testkit bridge logs **one** warning the first time it cannot reach a ready agent (see §5).
@@ -156,6 +168,72 @@ black-box path). One extension = one activation model; the user picks by test ty
 - Output `.exec` is unchanged (vanilla-equivalent); the servlet path and `CoverageContext` semantics are
   untouched; everything new is additive.
 
+## 7a. Whole-run aggregate mode (jacoco-parity single `.exec`)
+
+The agent wires a `LoggerRuntime` + `RuntimeData` that the instrumented classes write to
+(`ProbeInstrumentation.install`), but today the `RuntimeData` is a **throwaway local**
+(`runtime.startup(new RuntimeData())`) — it is never retained or dumped. (`GoldenEquivalenceIT`
+demonstrates the *collect-from-RuntimeData* pattern, but against its own test-local instance, not the
+agent's.) **Whole-run mode** retains that global `RuntimeData` and dumps it once at JVM shutdown as a
+single **vanilla-JaCoCo-format** `.exec` representing the whole-run coverage — so a user who wants
+jacoco's single whole-run artifact can get it alongside the per-test files. (It is the same `.exec`
+format and semantically the whole-run coverage; we do not claim byte-for-byte identity with a separate
+stock-jacoco run — session name/timestamp/visit order are not normalized.)
+
+- New agent option `aggregateFile=<path>` (default unset = **off**, no behavior change).
+- **Resolution:** absolute path → used as-is; otherwise resolved under the `destfile` output directory
+  (`<destfile>/<aggregateFile>`). The path **must not contain `,` or `=`** (the agent option string is
+  comma-delimited `key=value` with no quoting). `AgentOptions` gains an `aggregateFile()` accessor
+  (default null).
+- **Write path:** `runtimeData.collect(store, new SessionInfoStore(), false)` yields a jacoco
+  `ExecutionDataStore`; a new `AggregateWriter` writes it via `org.jacoco.core.data.ExecutionDataWriter`
+  — **authored against `org.jacoco.*` in source exactly like `ExecWriter`**, so the shadow plugin
+  relocates it to `io.pjacoco.shaded.jacoco.*` matching the retained `RuntimeData` instance type. (The
+  existing per-test `ExecWriter` takes a `TestStore`, so a separate writer is needed.)
+- **Wiring & ordering:** `ProbeInstrumentation.install` is changed to **retain** the `RuntimeData` (return
+  it so `Bootstrap` holds it). The aggregate write is added to the **same** existing shutdown hook,
+  **after** `reg.dumpRemainingAsPartial()` and before `endpoint.stop()` — do not register a second hook.
+  No change to instrumentation behavior.
+- **Independent of / additive to** the per-test path: the global `RuntimeData` accumulates every probe
+  that fires (all tests + class init + untagged code), exactly like stock jacoco; per-test stores are
+  unaffected. Works in both out-of-process and in-process modes (one aggregate per agent JVM).
+- **Plugins:** Gradle `pjacoco { aggregateFile.set("jacoco.exec") }` and Maven
+  `<configuration><aggregateFile>...</aggregateFile></configuration>` (PrepareAgentMojo gains the param)
+  both compose it into the agent option string.
+
+## 7b. JUnit 5 auto-registration (zero per-test annotation)
+
+So a unit suite needs no `@ExtendWith` on every class:
+
+- **Services file:** `testkit-junit5` ships `/META-INF/services/org.junit.jupiter.api.extension.Extension`
+  listing **exactly one** entry — `PjacocoInProcessExtension`. The HTTP-path `PjacocoExtension` is
+  deliberately NOT listed (a test/review gate verifies the single entry).
+- **Plugin change:** `PjacocoGradleExtension` gains a boolean `autoDetectExtensions` (default **true**,
+  honoring "dependency present → auto-applies"; set `false` to opt out). When true, `PjacocoPlugin`'s
+  `AgentArgs.asArguments()` adds `-Djunit.jupiter.extensions.autodetection.enabled=true` alongside the
+  agent arg on the attached task. With plugin + `testkit-junit5` dep, the in-process extension applies
+  suite-wide.
+- **Trade-off (documented):** `autodetection.enabled` is a global JUnit switch — it auto-applies *all*
+  service-registered extensions on the classpath, not only pjacoco's. `autoDetectExtensions.set(false)`
+  is the escape hatch.
+- **Safety guard for accidental activation:** `CoverageControl.deactivate` checks `store.classCount()`:
+  if **0**, it **discards the store without flushing** (a new `registry.discard(testId)` that removes
+  the entry but writes nothing) instead of `registry.stop` (which always flushes). So if the
+  auto-registered extension fires on a test thread where no instrumented SUT runs (e.g. a servlet
+  black-box test, SUT on a server worker thread), it produces **no garbage file**. (The guard lives in
+  `CoverageControl.deactivate` only — NOT in the shared writer — so the existing servlet e2e that
+  intentionally writes an empty `.exec` for a registered-but-untagged test, `SpecAcceptanceE2E.untagged
+  Request_notRecorded_andNoThreadLeak`, is unaffected.)
+- **Bridge warning:** `InProcessBridge` suppresses its one-time "agent not reachable" warning when
+  `pjacoco.control-url` is set — that means the user is on the black-box path and a local agent is
+  expected to be absent (no in-process bridge), so the warning would be misleading.
+- **Mixed-mode caveat (documented):** a single test task using **both** the auto in-process path and the
+  explicit servlet `PjacocoExtension` runs both `afterEach` callbacks (JUnit 5 LIFO order): the HTTP
+  `PjacocoExtension` stops the testId first, then the in-process `deactivate` calls
+  `registry.stop`/`discard` for an already-removed testId → a **harmless** `stop-missing` warning per
+  test (no data loss — the empty-store guard already suppressed the in-process write). Use separate
+  tasks, or set `autoDetectExtensions.set(false)` for the black-box task. README states this.
+
 ## 8. E2E / acceptance tests (definition of done)
 
 Authored first (red), driven green by inner-loop unit TDD.
@@ -173,6 +251,15 @@ Authored first (red), driven green by inner-loop unit TDD.
   have unit tests.
 - **AC-IP4 (build guard):** a test asserts `io/pjacoco/agent/api/CoverageControl.class` is present in the
   built shaded agent jar (FQN-stability regression guard).
+- **AC-IP5 (whole-run aggregate):** with `aggregateFile` set, after a run the single aggregate `.exec`
+  exists and, analyzed by jacoco's `Analyzer`, its covered lines are a **superset of** (contain) the
+  union of the per-test `.exec` covered lines, and it includes coverage from both SUT classes (it is the
+  whole-run jacoco artifact — a superset, since class-init / outside-boundary code is also recorded).
+  Default-unset produces no aggregate file (no regression).
+- **AC-IP6 (auto-registration):** a unit suite with **no `@ExtendWith`** — only the `testkit-junit5`
+  dependency + the plugin (`autoDetectExtensions` on) — produces per-test `.exec`. Assert (a) the
+  empty-store guard: an activation that records nothing writes no file; (b) a clean in-process-only run
+  emits no `stop-missing` warning.
 - **Regression:** the full agent suite + existing testkit/plugin/sample suites stay green.
 
 **Feasibility:** AC-IP1/IP2 run as a real consumer (Gradle plugin + testkit from mavenLocal, like the
@@ -181,9 +268,10 @@ mechanism itself is already demonstrated by `ProbeRoutingIT` at the unit level.
 
 ## 9. Definition of done
 
-AC-IP1–IP3 green; full regression green; docs updated — README "Scope" notes in-process per-test
+AC-IP1–IP6 green; full regression green; docs updated — README "Scope" notes in-process per-test
 coverage is now supported (synchronous in-JVM tests), the testkit usage section documents
-`PjacocoInProcessExtension`/`PjacocoInProcessRule`, and the async/thread-pool limitation is stated.
+`PjacocoInProcessExtension`/`PjacocoInProcessRule` (with auto-registration) and the `aggregateFile`
+whole-run option, and the async/thread-pool + mixed-mode limitations are stated.
 
 ## 10. Three-model review log (2026-06-16)
 
@@ -204,3 +292,30 @@ timed out), and OpenAI GPT-5.2. Incorporated (consensus / valid):
   note (Sonnet-fb, GPT); MockMvc alternative rationale (GPT).
 
 No findings rejected — all were located and verifiable.
+
+## 11. Three-model review log — additions (§7a/§7b)
+
+The two added features were reviewed by Claude Sonnet, Gemini 3.5 Flash, and (after GPT-5.2 hung) a
+second Claude Sonnet fallback — plus the eventual GPT-5.2 output. Incorporated:
+
+- Aggregate write path: dedicated `AggregateWriter` via `org.jacoco.core.data.ExecutionDataWriter`
+  (authored against `org.jacoco.*`, shadow-relocated like `ExecWriter`); `ExecWriter` only takes a
+  `TestStore` (all four).
+- Corrected the inaccurate "GoldenEquivalenceIT collects from the agent's RuntimeData" framing — it
+  uses a test-local instance; the agent's RuntimeData is a throwaway local that must be retained (Sonnet).
+- AC-IP5: **superset**, not equality (the global RuntimeData also records class-init / outside-boundary
+  code) (Sonnet ×2, GPT); softened the "byte-equivalent" wording (GPT).
+- Shutdown-hook ordering: aggregate write in the same hook, after `dumpRemainingAsPartial` (Sonnet-fb).
+- `aggregateFile` path resolution + no `,`/`=` + `AgentOptions` accessor (Sonnet, Sonnet-fb).
+- Maven plugin parity (`PrepareAgentMojo` aggregateFile param) (Gemini).
+- Gradle plugin change for autodetection: `autoDetectExtensions` DSL flag + `AgentArgs` injection +
+  opt-out (Sonnet, Gemini, Sonnet-fb).
+- Empty-store guard placed in `CoverageControl.deactivate` (`registry.discard` without flush), NOT the
+  shared writer — reconciled with the existing untagged-test e2e that intentionally writes empty `.exec`.
+- Services file pins exactly one entry (`PjacocoInProcessExtension`) (Sonnet).
+- Mixed-mode LIFO → harmless `stop-missing` warning documented; AC-IP6 asserts none for clean runs
+  (Sonnet-fb).
+- Bridge warning silenced when `pjacoco.control-url` is set (Gemini).
+- `CoverageControl` null-safety when registry unbound (Gemini, GPT); thread-premise note + AC guard (GPT).
+
+No findings rejected.
