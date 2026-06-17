@@ -15,6 +15,7 @@ repositories { mavenCentral() }
 dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
     testImplementation(gradleTestKit())
+    testImplementation("org.jacoco:org.jacoco.core:0.8.12")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -39,6 +40,10 @@ evaluationDependsOn(":agent")
 evaluationDependsOn(":testkit-core")
 val agentShadowJar = project(":agent").tasks.named("shadowJar")
 val testkitJar = project(":testkit-core").tasks.named("jar")
+evaluationDependsOn(":testkit-junit5")
+evaluationDependsOn(":testkit-junit4")
+val testkitJunit5Jar = project(":testkit-junit5").tasks.named("jar")
+val testkitJunit4Jar = project(":testkit-junit4").tasks.named("jar")
 
 tasks.test {
     useJUnitPlatform()
@@ -46,4 +51,7 @@ tasks.test {
     systemProperty("pjacoco.it.agentJar", agentShadowJar.get().outputs.files.singleFile.absolutePath)
     systemProperty("pjacoco.it.testkitJar", testkitJar.get().outputs.files.singleFile.absolutePath)
     systemProperty("pjacoco.it.version", project.version.toString())
+    dependsOn(testkitJunit5Jar, testkitJunit4Jar)
+    systemProperty("pjacoco.it.testkitJunit5Jar", testkitJunit5Jar.get().outputs.files.singleFile.absolutePath)
+    systemProperty("pjacoco.it.testkitJunit4Jar", testkitJunit4Jar.get().outputs.files.singleFile.absolutePath)
 }
