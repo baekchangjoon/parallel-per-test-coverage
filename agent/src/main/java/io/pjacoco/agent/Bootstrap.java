@@ -2,6 +2,7 @@ package io.pjacoco.agent;
 
 import io.pjacoco.agent.api.CoverageControl;
 import io.pjacoco.agent.control.ControlEndpoint;
+import io.pjacoco.agent.inbound.junit4.JUnit4InboundActivator;
 import io.pjacoco.agent.inbound.servlet.ServletInboundActivator;
 import io.pjacoco.agent.observability.AgentLog;
 import io.pjacoco.agent.observability.Metrics;
@@ -95,7 +96,9 @@ public final class Bootstrap {
         // Inbound activation: resolve TestStore from the registry per request, set/clear CoverageContext.
         new ServletInboundActivator(registry, metrics, log).install(inst);
 
-        // (Task 11 inserts the JUnit 4 activator install here.)
+        if (options.junit4Auto()) {
+            new JUnit4InboundActivator().install(inst);
+        }
 
         log.info("agent installed (output=" + options.outputDir()
                 + ", mode=" + (options.autoRegister() ? "auto-register" : "strict") + ")");
