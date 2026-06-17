@@ -118,19 +118,35 @@ class OwnerBlackBoxIT {
 인-프로세스 통합 테스트 — 도 testId별 `.exec` 를 받을 수 있습니다. HTTP 요청이나 서블릿 경계가 없어도
 되며, 각 테스트 메서드의 시작·종료가 곧 flush 경계입니다.
 
+**전제 조건(이 경로):** 테스트 클래스패스에 JUnit 5(Jupiter) 또는 JUnit 4; 실행에 JDK 8+; 소스에서
+직접 빌드하려면 JDK 17+.
+
 **권장: 플러그인 + 테스트킷.** `io.pjacoco.gradle` 플러그인과 `pjacoco-testkit-junit5` 의존성을 추가하면,
-JUnit 5 익스텐션이 스위트 전체에 자동 적용됩니다(애너테이션 불필요). JUnit 4는 에이전트가 처리하므로
-`@Rule` 도 필요 없습니다.
+JUnit 5 익스텐션이 스위트 전체에 자동 적용됩니다(애너테이션 불필요). Gradle 플러그인이 JUnit 5
+익스텐션 자동 등록(autodetection)을 켜 주므로 `@ExtendWith` 가 필요 없습니다 — Maven에서는
+`junit-platform.properties` 로 켜며, 아래 "Maven에서 JUnit 5 자동 등록" 에서 다룹니다. JUnit 4는
+에이전트가 처리하므로 `@Rule` 도 필요 없습니다.
+
+> 아티팩트는 아직 Maven Central / Gradle Plugin Portal 에 공개 배포되지 않았습니다(공개 배포 예정).
+> 지금은 소스에서 빌드 후 `publishToMavenLocal` 로 로컬에 설치해 쓰세요 —
+> [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
 
 ```kotlin
 plugins { id("io.pjacoco.gradle") version "1.1.0" }
 
-pjacoco { includes.set(listOf("com.example.*")) }   // 인-프로세스 경로는 control-url 불필요
+pjacoco {
+    attachTo.set(listOf("test"))          // 에이전트를 주입할 테스트 태스크 이름
+    includes.set(listOf("com.example.*")) // 인-프로세스 경로는 control-url 불필요
+}
 dependencies {
     testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.1.0")   // JUnit 5 자동 적용
     // JUnit 4는 에이전트만으로 동작 — 의존성·@Rule 불필요
 }
 ```
+
+**실행 / 결과 위치.** 에이전트를 붙인 테스트 태스크를 그대로 실행합니다(예: `./gradlew test`). 테스트별
+파일은 출력 디렉터리(Gradle 기본값 `build/pjacoco/`)에 테스트당 하나씩 `<FQN>#<method>.exec`(+ 짝이 되는
+`.json` 사이드카)로 떨어지고, 전체 실행을 합친 `aggregate.exec` 하나가 함께 쓰입니다.
 
 **테스트킷을 직접 등록**하려면(자동 적용을 끈 경우 등) 익스텐션/룰을 명시합니다.
 
