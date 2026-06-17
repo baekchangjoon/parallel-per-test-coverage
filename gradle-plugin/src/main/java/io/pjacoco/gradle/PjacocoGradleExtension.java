@@ -41,6 +41,19 @@ public abstract class PjacocoGradleExtension {
     /** Names of {@code Test}/{@code JavaExec} tasks to auto-inject the agent (and control-url) into. */
     public abstract ListProperty<String> getAttachTo();
 
+    /** Inject {@code junit.jupiter.extensions.autodetection.enabled=true} so the in-process JUnit 5
+     *  extension auto-applies suite-wide (no {@code @ExtendWith}). Default true; set false to opt out. */
+    public abstract Property<Boolean> getAutoDetectExtensions();
+
+    /** Write the whole-run aggregate {@code .exec} at shutdown. Default true. */
+    public abstract Property<Boolean> getAggregate();
+
+    /** Aggregate file name (or absolute path). Unset → agent default {@code aggregate.exec}. */
+    public abstract Property<String> getAggregateFile();
+
+    /** Weave JUnit 4's {@code runLeaf} for zero-touch per-test activation. Default true. */
+    public abstract Property<Boolean> getJunit4Auto();
+
     /** Read-only (plugin-populated): the composed {@code -javaagent:...} argument. */
     public abstract Property<String> getAgentJvmArg();
 

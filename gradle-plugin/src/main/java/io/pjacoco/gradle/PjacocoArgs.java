@@ -11,11 +11,15 @@ final class PjacocoArgs {
 
     private PjacocoArgs() {}
 
-    /**
-     * @return the {@code -javaagent:<jar>=destfile=..,port=..,includes=..,excludes=..} argument.
-     */
+    /** Backward-compatible 5-arg form: aggregate on, default aggregate file, junit4Auto on. */
     static String javaagent(String agentJarPath, int port, String destfile,
                             List<String> includes, List<String> excludes) {
+        return javaagent(agentJarPath, port, destfile, includes, excludes, true, null, true);
+    }
+
+    static String javaagent(String agentJarPath, int port, String destfile,
+                            List<String> includes, List<String> excludes,
+                            boolean aggregate, String aggregateFile, boolean junit4Auto) {
         StringBuilder opts = new StringBuilder();
         opts.append("destfile=").append(destfile);
         opts.append(",port=").append(port);
@@ -24,6 +28,16 @@ final class PjacocoArgs {
         }
         if (excludes != null && !excludes.isEmpty()) {
             opts.append(",excludes=").append(join(excludes));
+        }
+        // Aggregate defaults ON in the agent; only append overrides to keep the arg short.
+        if (!aggregate) {
+            opts.append(",aggregate=false");
+        }
+        if (aggregateFile != null && !aggregateFile.isEmpty()) {
+            opts.append(",aggregateFile=").append(aggregateFile);
+        }
+        if (!junit4Auto) {
+            opts.append(",junit4Auto=false");
         }
         return "-javaagent:" + agentJarPath + "=" + opts;
     }

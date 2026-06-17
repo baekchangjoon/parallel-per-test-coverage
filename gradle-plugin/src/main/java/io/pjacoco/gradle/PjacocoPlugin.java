@@ -1,6 +1,5 @@
 package io.pjacoco.gradle;
 
-import java.util.Arrays;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
@@ -34,6 +33,9 @@ public class PjacocoPlugin implements Plugin<Project> {
         ext.getAgentVersion().convention(DEFAULT_AGENT_VERSION);
         ext.getPort().convention(6310);
         ext.getDestfile().convention(project.getLayout().getBuildDirectory().dir("pjacoco"));
+        ext.getAutoDetectExtensions().convention(true);
+        ext.getAggregate().convention(true);
+        ext.getJunit4Auto().convention(true);
 
         Configuration agentConf = project.getConfigurations().create(CONFIGURATION_NAME, c -> {
             c.setVisible(false);
@@ -51,7 +53,10 @@ public class PjacocoPlugin implements Plugin<Project> {
         Provider<String> agentJvmArg = project.provider(() ->
                 PjacocoArgs.javaagent(agentJarPath.get(), ext.getPort().get(), destfilePath.get(),
                         ext.getIncludes().getOrElse(java.util.Collections.emptyList()),
-                        ext.getExcludes().getOrElse(java.util.Collections.emptyList())));
+                        ext.getExcludes().getOrElse(java.util.Collections.emptyList()),
+                        ext.getAggregate().getOrElse(true),
+                        ext.getAggregateFile().getOrElse(""),
+                        ext.getJunit4Auto().getOrElse(true)));
         Provider<String> controlUrlArg = ext.getPort().map(PjacocoArgs::controlUrlArg);
 
         ext.getAgentJvmArg().set(agentJvmArg);
@@ -65,7 +70,7 @@ public class PjacocoPlugin implements Plugin<Project> {
                 p.getTasks().named(taskName).configure(task -> {
                     if (task instanceof JavaForkOptions) {
                         ((JavaForkOptions) task).getJvmArgumentProviders().add(
-                                new AgentArgs(agentJvmArg, controlUrlArg));
+                                new AgentArgs(agentJvmArg, controlUrlArg, ext.getAutoDetectExtensions()));
                     } else {
                         p.getLogger().warn("[pjacoco] attachTo task '{}' is not a JVM-forking task; skipped.", taskName);
                     }
@@ -74,19 +79,28 @@ public class PjacocoPlugin implements Plugin<Project> {
         });
     }
 
-    /** Lazily yields the agent + control-url JVM args at execution time. */
+    /** Lazily yields the agent + control-url (+ optional JUnit 5 autodetection) JVM args at execution time. */
     static final class AgentArgs implements CommandLineArgumentProvider {
         private final Provider<String> agentJvmArg;
         private final Provider<String> controlUrlArg;
+        private final Provider<Boolean> autoDetectExtensions;
 
-        AgentArgs(Provider<String> agentJvmArg, Provider<String> controlUrlArg) {
+        AgentArgs(Provider<String> agentJvmArg, Provider<String> controlUrlArg,
+                  Provider<Boolean> autoDetectExtensions) {
             this.agentJvmArg = agentJvmArg;
             this.controlUrlArg = controlUrlArg;
+            this.autoDetectExtensions = autoDetectExtensions;
         }
 
         @Override
         public Iterable<String> asArguments() {
-            return Arrays.asList(agentJvmArg.get(), controlUrlArg.get());
+            java.util.List<String> args = new java.util.ArrayList<>();
+            args.add(agentJvmArg.get());
+            args.add(controlUrlArg.get());
+            if (Boolean.TRUE.equals(autoDetectExtensions.getOrElse(true))) {
+                args.add("-Djunit.jupiter.extensions.autodetection.enabled=true");
+            }
+            return args;
         }
     }
 }
