@@ -116,6 +116,67 @@ class OwnerBlackBoxIT {
 > (Maven Central / Gradle Plugin Portal) is pending; see [`docs/PUBLISHING.md`](docs/PUBLISHING.md) for
 > local validation today.
 
+## In-process per-test coverage (no servlet boundary)
+
+Synchronous in-JVM tests — pure unit tests, MockMvc, in-process integration tests — also produce one
+`.exec` per testId. The SUT runs **on the test thread**, so no HTTP request or servlet boundary is
+needed; each test method's start and end are the flush boundary.
+
+**Recommended: plugin + testkit.** Add the `io.pjacoco.gradle` plugin and the `pjacoco-testkit-junit5`
+dependency, and the JUnit 5 extension applies across the whole suite automatically (no annotation).
+JUnit 4 is handled by the agent, so it needs no `@Rule` either.
+
+```kotlin
+plugins { id("io.pjacoco.gradle") version "1.1.0" }
+
+pjacoco { includes.set(listOf("com.example.*")) }   // the in-process path needs no control-url
+dependencies {
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.1.0")   // JUnit 5 applied automatically
+    // JUnit 4 works from the agent alone — no dependency, no @Rule
+}
+```
+
+**To register the testkit yourself** (e.g. with auto-apply turned off), name the extension/rule:
+
+```java
+@ExtendWith(io.pjacoco.testkit.junit5.PjacocoInProcessExtension.class)   // JUnit 5
+class CalcTest { /* in-JVM test that calls the SUT directly */ }
+```
+
+```java
+class CalcTest {   // JUnit 4
+    @Rule public final io.pjacoco.testkit.junit4.PjacocoInProcessRule pjacoco =
+            new io.pjacoco.testkit.junit4.PjacocoInProcessRule();
+}
+```
+
+> To turn auto-apply off: JUnit 5 extension auto-registration is `pjacoco { autoDetectExtensions.set(false) }`,
+> the JUnit 4 agent handling is `pjacoco { junit4Auto.set(false) }`. (Maven:
+> `<autoDetectExtensions>false</autoDetectExtensions>` / `<junit4Auto>false</junit4Auto>`.)
+
+### JUnit 5 auto-registration on Maven
+
+The Maven plugin sets only `pjacoco.argLine` and does not touch the JUnit platform config, so enable
+auto-apply yourself with either:
+
+- one line in `src/test/resources/junit-platform.properties`:
+  `junit.jupiter.extensions.autodetection.enabled=true`
+- or the same value passed as a system property in the surefire config:
+  `<systemPropertyVariables><junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled></systemPropertyVariables>`
+
+## Whole-run aggregate file
+
+Alongside the per-test `.exec` files, a single **`aggregate.exec` covering the whole run** is written
+by default at JVM shutdown into the same output directory. Its format is vanilla JaCoCo, so `jacococli`
+and Sonar read it as-is.
+
+- Rename it: Gradle `pjacoco { aggregateFile.set("all.exec") }` / Maven `<aggregateFile>all.exec</aggregateFile>`
+  (agent option `aggregateFile=`). The default name is `aggregate.exec`.
+- Disable it: Gradle `pjacoco { aggregate.set(false) }` / Maven `<aggregate>false</aggregate>` (agent option `aggregate=false`).
+- One aggregate file is produced per target JVM. If you sharded the run, merge them with standard tooling:
+  `java -jar jacococli.jar merge shard1/aggregate.exec shard2/aggregate.exec --destfile all.exec`.
+- The aggregate is written from the normal shutdown hook. A hard kill (`kill -9`, etc.) skips it.
+
 ## Using the agent directly (low level)
 
 You can also drive the agent jar with `-javaagent` yourself, without the plugin.
@@ -155,6 +216,9 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 | `includes`/`excludes` | instrumentation scope (jacoco `WildcardMatcher`) | `*` / `` |
 | `port`/`address` | control endpoint binding | `6310` / `127.0.0.1` (loopback) |
 | `autoRegister` | record a testId that arrives without a prior `start` (default strict: not recorded) | `false` |
+| `aggregate` | write the whole-run aggregate `.exec` at shutdown | `true` |
+| `aggregateFile` | aggregate file name or absolute path | `aggregate.exec` |
+| `junit4Auto` | let the agent handle JUnit 4 in-process tests automatically | `true` |
 | `commitSha` | written to the manifest header (or env `PJACOCO_COMMIT`) | — |
 
 ## Output
@@ -253,8 +317,17 @@ docs/                   # design specs · publishing guide · research reports
 
 ## Scope
 
-**In v1**: synchronous servlet stack, line-level vanilla-equivalent `.exec` per testId, Baggage
-routing, control endpoint, failure isolation / memory cap / observability, jacoco option mirroring.
+**In v1**: synchronous servlet stack and synchronous in-JVM tests (pure unit, MockMvc, in-process
+integration), line-level vanilla-equivalent `.exec` per testId, Baggage routing, control endpoint,
+whole-run aggregate file, failure isolation / memory cap / observability, jacoco option mirroring.
+
+**In-process path limitations**:
+- Coverage from work offloaded to async or thread-pool threads is not attributed to that test.
+- `@Test(timeout)` / `@Rule Timeout` run on a separate thread (under the JUnit 4 agent handling, that
+  test's `.exec` can come out empty).
+- JUnit 5 parameterized/repeated tests share one testId, so only the last invocation is kept.
+- Mixing the in-process and servlet paths in one test task: split them into separate tasks, or turn one
+  off with the `autoDetectExtensions` / `junit4Auto` opt-out.
 
 **Phase 2 (non-goals)**: async/thread-pool context propagation, reactive (WebFlux) / gRPC, drain mode,
 time-based TTL eviction, JMX, backend upload.
