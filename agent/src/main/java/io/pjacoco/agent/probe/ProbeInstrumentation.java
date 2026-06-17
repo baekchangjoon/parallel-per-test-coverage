@@ -49,20 +49,27 @@ public final class ProbeInstrumentation {
                 .installOn(inst);
     }
 
-    public static void install(Instrumentation inst, AgentOptions options) throws Exception {
+    /**
+     * @return the global {@link RuntimeData} the instrumented classes write to. Previously a throwaway
+     *     local; now RETAINED so {@code Bootstrap} can dump the whole-run aggregate at shutdown
+     *     (jacoco's always-populated base layer). Per-test routing is unaffected.
+     */
+    public static RuntimeData install(Instrumentation inst, AgentOptions options) throws Exception {
         installHookOnly(inst);
 
-        // LoggerRuntime: in-process data channel for the instrumented classes' $jacocoInit. We don't
-        // consume jacoco's global data (our bridge records per-test) — the runtime just satisfies the
-        // instrumented code. Matches the validated spike.
+        // LoggerRuntime: in-process data channel for the instrumented classes' $jacocoInit. The global
+        // RuntimeData accumulates EVERY probe (jacoco's base layer); the per-test bridge records the
+        // additive per-test layer on top. Matches the validated spike.
         IRuntime runtime = new LoggerRuntime();
-        runtime.startup(new RuntimeData());
+        RuntimeData data = new RuntimeData();
+        runtime.startup(data);
 
         Instrumenter instrumenter = new Instrumenter(runtime);
         // Force ProbeInserter to load + be advised now (clean context). If it first loads later inside
         // our own transform(), ByteBuddy skips advising it and per-test routing silently no-ops.
         warmUp(instrumenter);
         inst.addTransformer(new JacocoTransformer(instrumenter, options), false);
+        return data;
     }
 
     private static void warmUp(Instrumenter instrumenter) {
