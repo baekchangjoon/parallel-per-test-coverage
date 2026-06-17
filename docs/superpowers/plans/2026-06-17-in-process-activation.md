@@ -167,6 +167,12 @@ systemProperty("pjacoco.it.testkitJunit5Jar", testkitJunit5Jar.get().outputs.fil
 systemProperty("pjacoco.it.testkitJunit4Jar", testkitJunit4Jar.get().outputs.files.singleFile.absolutePath)
 ```
 
+Also add jacoco-core to the plugin's **test** dependencies (the functional tests read the produced `.exec` files to verify class identity + the aggregate superset). In the `dependencies { ... }` block add:
+
+```kotlin
+    testImplementation("org.jacoco:org.jacoco.core:0.8.12")
+```
+
 - [ ] **Step 2: Verify the build still configures**
 
 Run: `./gradlew :gradle-plugin:help -q`
@@ -191,6 +197,7 @@ This is the headline E2E: a real consumer build, JUnit 5 **parallel**, two **dis
 ```java
 package io.pjacoco.gradle;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -198,6 +205,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.Map;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.gradle.testkit.runner.TaskOutcome;
@@ -216,12 +225,53 @@ class PjacocoInProcessFunctionalTest {
 
     @Test
     void pureUnitTestsGetIsolatedPerTestCoverageAndAggregate(@TempDir Path consumer) throws IOException {
+        BuildResult result = writeAndRunConsumer(consumer, /* aggregateOff = */ false);
+
+        assertTrue(result.task(":test").getOutcome() == TaskOutcome.SUCCESS, "consumer :test must pass");
+
+        Path out = consumer.resolve("build/pjacoco");
+        // testId is FQN#method (PjacocoInProcessExtension uses getName()). Read the .exec (a vanilla
+        // jacoco file) to prove WHICH class each test recorded — classCount=1 alone wouldn't rule out
+        // both tests recording the same class.
+        Map<String, boolean[]> a = execProbes(out.resolve("com.consumer.SutTest#coversA.exec"));
+        Map<String, boolean[]> b = execProbes(out.resolve("com.consumer.SutTest#coversB.exec"));
+
+        // AC-IP1 mutual exclusion: coversA holds exactly SutA (not SutB); coversB exactly SutB (not SutA).
+        assertEquals(Collections.singleton("com/consumer/SutA"), a.keySet(), "coversA must record only SutA");
+        assertEquals(Collections.singleton("com/consumer/SutB"), b.keySet(), "coversB must record only SutB");
+
+        // AC-IP5: aggregate defaults ON -> aggregate.exec exists, holds BOTH SUT classes, and is a
+        // probe-level SUPERSET of every per-test .exec (jacoco's always-populated base layer).
+        Map<String, boolean[]> agg = execProbes(out.resolve("aggregate.exec"));
+        assertTrue(agg.containsKey("com/consumer/SutA") && agg.containsKey("com/consumer/SutB"),
+                "aggregate must contain both SUT classes; was: " + agg.keySet());
+        assertSuperset(agg, a);
+        assertSuperset(agg, b);
+
+        // AC-IP6: a clean in-process-only run emits no stop-missing warning.
+        assertFalse(result.getOutput().contains("stop-missing"), "clean in-process run must not warn stop-missing");
+    }
+
+    /** AC-IP5 negative: with {@code aggregate=false} the aggregate file is absent; per-test .exec remain. */
+    @Test
+    void aggregateFalseProducesNoAggregateFile(@TempDir Path consumer) throws IOException {
+        BuildResult result = writeAndRunConsumer(consumer, /* aggregateOff = */ true);
+        assertTrue(result.task(":test").getOutcome() == TaskOutcome.SUCCESS, "consumer :test must pass");
+        Path out = consumer.resolve("build/pjacoco");
+        assertFalse(Files.exists(out.resolve("aggregate.exec")), "aggregate=false must write no aggregate.exec");
+        assertTrue(Files.exists(out.resolve("com.consumer.SutTest#coversA.exec")), "per-test .exec must still exist");
+    }
+
+    /** Writes the consumer project (two distinct SUT classes, no @ExtendWith) and runs its :test.
+     *  When {@code aggregateOff}, adds {@code aggregate.set(false)} to the pjacoco block. */
+    private BuildResult writeAndRunConsumer(Path consumer, boolean aggregateOff) throws IOException {
         String version = System.getProperty("pjacoco.it.version", "1.0.0");
         Path repo = Files.createDirectories(consumer.resolve("flatrepo"));
         Files.copy(Path.of(System.getProperty("pjacoco.it.agentJar")), repo.resolve("pjacoco-agent-" + version + ".jar"));
         Files.copy(Path.of(System.getProperty("pjacoco.it.testkitJar")), repo.resolve("pjacoco-testkit-core-" + version + ".jar"));
         Files.copy(Path.of(System.getProperty("pjacoco.it.testkitJunit5Jar")), repo.resolve("pjacoco-testkit-junit5-" + version + ".jar"));
 
+        String aggregateLine = aggregateOff ? "    aggregate.set(false)\n" : "";
         write(consumer.resolve("settings.gradle.kts"), "rootProject.name = \"consumer\"\n");
         write(consumer.resolve("build.gradle.kts"),
                 "plugins {\n"
@@ -243,6 +293,7 @@ class PjacocoInProcessFunctionalTest {
               + "    port.set(" + PORT + ")\n"
               + "    includes.set(listOf(\"com.consumer.SutA\", \"com.consumer.SutB\"))\n"
               + "    attachTo.set(listOf(\"test\"))\n"
+              + aggregateLine
               + "}\n"
               + "tasks.test {\n"
               + "    useJUnitPlatform()\n"
@@ -267,34 +318,38 @@ class PjacocoInProcessFunctionalTest {
               + "    @Test void coversB() { assertEquals(2, new SutB().g(5)); }\n"
               + "}\n");
 
-        BuildResult result = GradleRunner.create()
+        return GradleRunner.create()
                 .withProjectDir(consumer.toFile())
                 .withPluginClasspath()
                 .withArguments("test", "--stacktrace")
                 .build();
-
-        assertTrue(result.task(":test").getOutcome() == TaskOutcome.SUCCESS, "consumer :test must pass");
-
-        Path out = consumer.resolve("build/pjacoco");
-        // testId is FQN#method (PjacocoInProcessExtension uses getName()).
-        String aJson = read(out.resolve("com.consumer.SutTest#coversA.json"));
-        String bJson = read(out.resolve("com.consumer.SutTest#coversB.json"));
-
-        // AC-IP1 mutual exclusion: each test recorded exactly its own SUT class (classCount=1).
-        assertTrue(aJson.contains("\"classCount\":1"), "coversA must record exactly SutA; was: " + aJson);
-        assertTrue(bJson.contains("\"classCount\":1"), "coversB must record exactly SutB; was: " + bJson);
-
-        // AC-IP5: aggregate defaults ON -> aggregate.exec exists with > 0 bytes.
-        Path aggregate = out.resolve("aggregate.exec");
-        assertTrue(Files.exists(aggregate) && Files.size(aggregate) > 0, "aggregate.exec must exist (default on)");
-
-        // AC-IP6: a clean in-process-only run emits no stop-missing warning.
-        assertFalse(result.getOutput().contains("stop-missing"), "clean in-process run must not warn stop-missing");
     }
 
-    private static String read(Path p) throws IOException {
-        assertTrue(Files.exists(p), "expected sidecar: " + p);
-        return new String(Files.readAllBytes(p), StandardCharsets.UTF_8);
+    /** Reads a vanilla jacoco .exec into VM-class-name -> probe array (merging if a class repeats). */
+    private static Map<String, boolean[]> execProbes(Path exec) throws IOException {
+        assertTrue(Files.exists(exec), "expected .exec: " + exec);
+        Map<String, boolean[]> out = new java.util.HashMap<>();
+        try (java.io.InputStream in = new java.io.BufferedInputStream(Files.newInputStream(exec))) {
+            org.jacoco.core.data.ExecutionDataReader r = new org.jacoco.core.data.ExecutionDataReader(in);
+            r.setSessionInfoVisitor(info -> { });
+            r.setExecutionDataVisitor(d -> out.put(d.getName(), d.getProbes()));
+            r.read();
+        }
+        return out;
+    }
+
+    /** Asserts every probe set in {@code sub} is also set in {@code sup} (probe-level superset). */
+    private static void assertSuperset(Map<String, boolean[]> sup, Map<String, boolean[]> sub) {
+        for (Map.Entry<String, boolean[]> e : sub.entrySet()) {
+            boolean[] s = e.getValue();
+            boolean[] g = sup.get(e.getKey());
+            assertTrue(g != null, "aggregate missing class " + e.getKey());
+            for (int i = 0; i < s.length; i++) {
+                if (s[i]) {
+                    assertTrue(i < g.length && g[i], "aggregate must cover probe " + i + " of " + e.getKey());
+                }
+            }
+        }
     }
 
     private static void write(Path path, String content) throws IOException {
@@ -321,11 +376,23 @@ git commit -m "test(gradle-plugin): AC-IP1/IP5/IP6 pure-unit in-process function
 **Files:**
 - Test: `gradle-plugin/src/test/java/io/pjacoco/gradle/PjacocoJUnit4InProcessFunctionalTest.java`
 
+> **Why two consumer builds (not one):** the spec (§7c) says *do not* combine the agent-side `runLeaf`
+> weave with the `@Rule` on the same test. If you did, the rule's `finished` flushes the store first
+> (`result=passed`), then the agent-side `@OnMethodExit` finds `peek==null` and emits a harmless
+> `stop-missing` warning. To verify each path cleanly — and to cover the spec's AC-IP2 negatives
+> (`junit4Auto=false` disables the agent path; `@Parameterized` distinct `.exec`; `@Test(timeout)`
+> empty) — we use **two** consumer builds:
+> - **Build A (zero-touch, `junit4Auto` default on, no `@Rule`):** a plain test → `result=unknown`; a
+>   `@Parameterized` test → a distinct `.exec` per parameter set; a `@Test(timeout)` test → no `.exec`.
+> - **Build B (`junit4Auto=false`):** a `@Rule` test → `result=passed`; a no-`@Rule` test → no `.exec`
+>   (proving `junit4Auto=false` disabled the agent-side path).
+
 - [ ] **Step 1: Write the failing functional test**
 
 ```java
 package io.pjacoco.gradle;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -339,47 +406,22 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * AC-IP2: JUnit 4 in-process per-test coverage by BOTH the agent-side zero-touch path
- * (ParentRunner.runLeaf weave; no @Rule; sidecar result="unknown") and the explicit
- * {@code @Rule PjacocoInProcessRule} (result="passed"). Run via the JUnit Vintage engine.
+ * AC-IP2: JUnit 4 in-process per-test coverage. Build A exercises the agent-side zero-touch path
+ * (ParentRunner.runLeaf weave; no @Rule; result="unknown"), plus the @Parameterized (distinct .exec
+ * per set) and @Test(timeout) (no .exec — FailOnTimeout runs the body on a new thread) cases. Build B
+ * sets junit4Auto=false and exercises the explicit @Rule (result="passed") and confirms a no-@Rule
+ * test then produces no .exec. JUnit 4 runs via the Vintage engine.
  */
 class PjacocoJUnit4InProcessFunctionalTest {
 
-    static final int PORT = 6342;
-
     @Test
-    void junit4GetsPerTestCoverageZeroTouchAndViaRule(@TempDir Path consumer) throws IOException {
-        String version = System.getProperty("pjacoco.it.version", "1.0.0");
-        Path repo = Files.createDirectories(consumer.resolve("flatrepo"));
-        Files.copy(Path.of(System.getProperty("pjacoco.it.agentJar")), repo.resolve("pjacoco-agent-" + version + ".jar"));
-        Files.copy(Path.of(System.getProperty("pjacoco.it.testkitJar")), repo.resolve("pjacoco-testkit-core-" + version + ".jar"));
-        Files.copy(Path.of(System.getProperty("pjacoco.it.testkitJunit4Jar")), repo.resolve("pjacoco-testkit-junit4-" + version + ".jar"));
-
+    void zeroTouchAgentPath_parameterized_andTimeout(@TempDir Path consumer) throws IOException {
+        Path repo = prepareRepo(consumer);
         write(consumer.resolve("settings.gradle.kts"), "rootProject.name = \"consumer\"\n");
-        write(consumer.resolve("build.gradle.kts"),
-                "plugins { java; id(\"io.pjacoco.gradle\") }\n"
-              + "repositories { mavenCentral(); flatDir { dirs(\"" + repo.toUri().getPath() + "\") } }\n"
-              + "dependencies {\n"
-              + "    testImplementation(\"io.pjacoco:pjacoco-testkit-junit4:" + version + "\")\n"
-              + "    testImplementation(\"io.pjacoco:pjacoco-testkit-core:" + version + "\")\n"
-              + "    testImplementation(\"junit:junit:4.13.2\")\n"
-              + "    testRuntimeOnly(\"org.junit.vintage:junit-vintage-engine:5.10.3\")\n"
-              + "    testRuntimeOnly(\"org.junit.platform:junit-platform-launcher\")\n"
-              + "}\n"
-              + "pjacoco {\n"
-              + "    agentVersion.set(\"" + version + "\")\n"
-              + "    port.set(" + PORT + ")\n"
-              + "    includes.set(listOf(\"com.consumer.SutA\", \"com.consumer.SutB\"))\n"
-              + "    attachTo.set(listOf(\"test\"))\n"
-              + "}\n"
-              + "tasks.test { useJUnitPlatform() }\n");
+        write(consumer.resolve("build.gradle.kts"), buildScript(repo, 6342, /* junit4Auto = */ true));
 
-        write(consumer.resolve("src/main/java/com/consumer/SutA.java"),
-                "package com.consumer;\npublic class SutA { public int f(int n) { if (n < 0) return -1; return 1; } }\n");
-        write(consumer.resolve("src/main/java/com/consumer/SutB.java"),
-                "package com.consumer;\npublic class SutB { public int g(int n) { if (n == 0) return 0; return 2; } }\n");
-
-        // (a) zero-touch: NO @Rule — covered by the agent-side runLeaf weave.
+        sutClasses(consumer);
+        // (a) zero-touch: NO @Rule — bracketed by the agent-side runLeaf weave.
         write(consumer.resolve("src/test/java/com/consumer/ZeroTouchTest.java"),
                 "package com.consumer;\n"
               + "import org.junit.Test;\n"
@@ -387,8 +429,55 @@ class PjacocoJUnit4InProcessFunctionalTest {
               + "public class ZeroTouchTest {\n"
               + "    @Test public void coversA() { assertEquals(1, new SutA().f(5)); }\n"
               + "}\n");
+        // (b) @Parameterized: two parameter sets -> Description.getMethodName() = run[0]/run[1].
+        write(consumer.resolve("src/test/java/com/consumer/ParamTest.java"),
+                "package com.consumer;\n"
+              + "import java.util.*;\n"
+              + "import org.junit.Test;\n"
+              + "import org.junit.runner.RunWith;\n"
+              + "import org.junit.runners.Parameterized;\n"
+              + "import org.junit.runners.Parameterized.Parameters;\n"
+              + "@RunWith(Parameterized.class)\n"
+              + "public class ParamTest {\n"
+              + "    @Parameters public static Collection<Object[]> data() { return Arrays.asList(new Object[]{1}, new Object[]{2}); }\n"
+              + "    private final int n;\n"
+              + "    public ParamTest(int n) { this.n = n; }\n"
+              + "    @Test public void run() { new SutB().g(n); }\n"
+              + "}\n");
+        // (c) @Test(timeout): FailOnTimeout runs the body on a NEW thread -> no context -> empty -> no .exec.
+        write(consumer.resolve("src/test/java/com/consumer/TimeoutTest.java"),
+                "package com.consumer;\n"
+              + "import org.junit.Test;\n"
+              + "public class TimeoutTest {\n"
+              + "    @Test(timeout = 2000) public void coversTimeout() { new SutA().f(7); }\n"
+              + "}\n");
 
-        // (b) explicit @Rule.
+        BuildResult result = run(consumer);
+        assertTrue(result.task(":test").getOutcome() == TaskOutcome.SUCCESS, "consumer :test must pass");
+        Path out = consumer.resolve("build/pjacoco");
+
+        // Agent-side zero-touch: per-test .exec with result=unknown.
+        String zt = read(out.resolve("com.consumer.ZeroTouchTest#coversA.json"));
+        assertTrue(zt.contains("\"classCount\":1"), "zero-touch must record SutA; was: " + zt);
+        assertTrue(zt.contains("\"result\":\"unknown\""), "agent-side path uses result=unknown; was: " + zt);
+
+        // @Parameterized: a distinct .exec per parameter set (run[0], run[1]).
+        assertTrue(Files.exists(out.resolve("com.consumer.ParamTest#run[0].exec")), "param set 0 must have its own .exec");
+        assertTrue(Files.exists(out.resolve("com.consumer.ParamTest#run[1].exec")), "param set 1 must have its own .exec");
+
+        // @Test(timeout): empty store guard -> no .exec (documented limitation, not a failure).
+        assertFalse(Files.exists(out.resolve("com.consumer.TimeoutTest#coversTimeout.exec")),
+                "a @Test(timeout) test runs on a new thread -> no per-test .exec");
+    }
+
+    @Test
+    void junit4AutoFalse_disablesAgentPath_butRuleStillWorks(@TempDir Path consumer) throws IOException {
+        Path repo = prepareRepo(consumer);
+        write(consumer.resolve("settings.gradle.kts"), "rootProject.name = \"consumer\"\n");
+        write(consumer.resolve("build.gradle.kts"), buildScript(repo, 6343, /* junit4Auto = */ false));
+
+        sutClasses(consumer);
+        // Explicit @Rule still produces coverage (result=passed) even with junit4Auto=false.
         write(consumer.resolve("src/test/java/com/consumer/RuleTest.java"),
                 "package com.consumer;\n"
               + "import io.pjacoco.testkit.junit4.PjacocoInProcessRule;\n"
@@ -399,23 +488,73 @@ class PjacocoJUnit4InProcessFunctionalTest {
               + "    @Rule public final PjacocoInProcessRule pjacoco = new PjacocoInProcessRule();\n"
               + "    @Test public void coversB() { assertEquals(2, new SutB().g(5)); }\n"
               + "}\n");
+        // No @Rule + junit4Auto=false -> the agent-side path is OFF -> no .exec.
+        write(consumer.resolve("src/test/java/com/consumer/NoRuleTest.java"),
+                "package com.consumer;\n"
+              + "import org.junit.Test;\n"
+              + "import static org.junit.Assert.*;\n"
+              + "public class NoRuleTest {\n"
+              + "    @Test public void coversA() { assertEquals(1, new SutA().f(5)); }\n"
+              + "}\n");
 
-        BuildResult result = GradleRunner.create()
+        BuildResult result = run(consumer);
+        assertTrue(result.task(":test").getOutcome() == TaskOutcome.SUCCESS, "consumer :test must pass");
+        Path out = consumer.resolve("build/pjacoco");
+
+        String rule = read(out.resolve("com.consumer.RuleTest#coversB.json"));
+        assertTrue(rule.contains("\"classCount\":1"), "@Rule must record SutB; was: " + rule);
+        assertTrue(rule.contains("\"result\":\"passed\""), "@Rule reports pass/fail; was: " + rule);
+
+        assertFalse(Files.exists(out.resolve("com.consumer.NoRuleTest#coversA.exec")),
+                "junit4Auto=false must disable the agent-side path (no .exec for a no-@Rule test)");
+    }
+
+    // ---- shared scaffolding ----
+
+    private Path prepareRepo(Path consumer) throws IOException {
+        String version = System.getProperty("pjacoco.it.version", "1.0.0");
+        Path repo = Files.createDirectories(consumer.resolve("flatrepo"));
+        Files.copy(Path.of(System.getProperty("pjacoco.it.agentJar")), repo.resolve("pjacoco-agent-" + version + ".jar"));
+        Files.copy(Path.of(System.getProperty("pjacoco.it.testkitJar")), repo.resolve("pjacoco-testkit-core-" + version + ".jar"));
+        Files.copy(Path.of(System.getProperty("pjacoco.it.testkitJunit4Jar")), repo.resolve("pjacoco-testkit-junit4-" + version + ".jar"));
+        return repo;
+    }
+
+    private static String buildScript(Path repo, int port, boolean junit4Auto) {
+        String version = System.getProperty("pjacoco.it.version", "1.0.0");
+        String junit4AutoLine = junit4Auto ? "" : "    junit4Auto.set(false)\n";
+        return "plugins { java; id(\"io.pjacoco.gradle\") }\n"
+              + "repositories { mavenCentral(); flatDir { dirs(\"" + repo.toUri().getPath() + "\") } }\n"
+              + "dependencies {\n"
+              + "    testImplementation(\"io.pjacoco:pjacoco-testkit-junit4:" + version + "\")\n"
+              + "    testImplementation(\"io.pjacoco:pjacoco-testkit-core:" + version + "\")\n"
+              + "    testImplementation(\"junit:junit:4.13.2\")\n"
+              + "    testRuntimeOnly(\"org.junit.vintage:junit-vintage-engine:5.10.3\")\n"
+              + "    testRuntimeOnly(\"org.junit.platform:junit-platform-launcher\")\n"
+              + "}\n"
+              + "pjacoco {\n"
+              + "    agentVersion.set(\"" + version + "\")\n"
+              + "    port.set(" + port + ")\n"
+              + "    includes.set(listOf(\"com.consumer.SutA\", \"com.consumer.SutB\"))\n"
+              + "    attachTo.set(listOf(\"test\"))\n"
+              + junit4AutoLine
+              + "}\n"
+              + "tasks.test { useJUnitPlatform() }\n";
+    }
+
+    private void sutClasses(Path consumer) throws IOException {
+        write(consumer.resolve("src/main/java/com/consumer/SutA.java"),
+                "package com.consumer;\npublic class SutA { public int f(int n) { if (n < 0) return -1; return 1; } }\n");
+        write(consumer.resolve("src/main/java/com/consumer/SutB.java"),
+                "package com.consumer;\npublic class SutB { public int g(int n) { if (n == 0) return 0; return 2; } }\n");
+    }
+
+    private static BuildResult run(Path consumer) {
+        return GradleRunner.create()
                 .withProjectDir(consumer.toFile())
                 .withPluginClasspath()
                 .withArguments("test", "--stacktrace")
                 .build();
-
-        assertTrue(result.task(":test").getOutcome() == TaskOutcome.SUCCESS, "consumer :test must pass");
-
-        Path out = consumer.resolve("build/pjacoco");
-        String zeroTouch = read(out.resolve("com.consumer.ZeroTouchTest#coversA.json"));
-        String viaRule = read(out.resolve("com.consumer.RuleTest#coversB.json"));
-
-        assertTrue(zeroTouch.contains("\"classCount\":1"), "zero-touch must record SutA; was: " + zeroTouch);
-        assertTrue(zeroTouch.contains("\"result\":\"unknown\""), "agent-side path uses result=unknown; was: " + zeroTouch);
-        assertTrue(viaRule.contains("\"classCount\":1"), "@Rule must record SutB; was: " + viaRule);
-        assertTrue(viaRule.contains("\"result\":\"passed\""), "@Rule reports pass/fail; was: " + viaRule);
     }
 
     private static String read(Path p) throws IOException {
@@ -430,7 +569,10 @@ class PjacocoJUnit4InProcessFunctionalTest {
 }
 ```
 
-> **Note on the `@Rule` + zero-touch overlap:** `RuleTest` is covered by BOTH the agent-side `runLeaf` weave AND the explicit rule. The spec (§7c "Do not combine") documents this as redundant. To keep AC-IP2 unambiguous, the agent-side path uses `result="unknown"` and the rule uses `result="passed"`; whichever `deactivate` runs last wins the sidecar. The rule's `finished` runs **inside** `runLeaf` (before `runLeaf` returns), so the agent-side `@OnMethodExit` runs last and would overwrite to `unknown`. **Therefore AC-IP2 part (b) sets `junit4Auto=false` is NOT used here** — instead `RuleTest`'s assertion tolerates either by checking `classCount` strictly and `result` against `passed`. If the last-writer race makes `result` flaky, split into two consumer builds (one with `junit4Auto=false` for the rule). Implementer: run it; if `viaRule` shows `unknown`, add `// junit4Auto=false` to the `pjacoco {}` block of a second consumer build for the rule case and assert there.
+> **Note:** the `@Parameterized` sidecar method name is `run[0]`/`run[1]` (JUnit 4
+> `Description.getMethodName()` for parameterized runners includes the `[index]` suffix). If the agent
+> emits a different exact form, read the `build/pjacoco` directory listing in the test output and adjust
+> the expected file names — the invariant is **two distinct** `.exec`, one per parameter set.
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -790,7 +932,6 @@ This test builds a real jacoco `RuntimeData` by instrumenting + running a class 
 package io.pjacoco.agent.output;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.BufferedInputStream;
@@ -814,14 +955,10 @@ import org.junit.jupiter.api.io.TempDir;
 
 class AggregateWriterTest {
 
+    // AggTarget is a TOP-LEVEL class (defined at the bottom of this file), so its compiled resource is
+    // /io/pjacoco/agent/output/AggTarget.class — matching NAME. A nested class would compile to
+    // AggregateWriterTest$AggTarget.class and readBytes(NAME) would NPE on a null stream.
     static final String NAME = "io.pjacoco.agent.output.AggTarget";
-
-    public static class AggTarget {
-        public int classify(int n) {
-            if (n < 0) return -1;
-            return 1;
-        }
-    }
 
     @Test
     void writesAValidNonEmptyExecFromRuntimeData(@TempDir Path dir) throws Exception {
@@ -839,7 +976,7 @@ class AggregateWriterTest {
         target.getMethod("classify", int.class).invoke(target.getDeclaredConstructor().newInstance(), 5);
 
         Path exec = dir.resolve("aggregate.exec");
-        new AggregateWriter().write(dir, "aggregate.exec", data, 42L);
+        new AggregateWriter().write(dir, "aggregate.exec", data);
         runtime.shutdown();
 
         assertTrue(Files.exists(exec) && Files.size(exec) > 0, "aggregate.exec must be written and non-empty");
@@ -867,7 +1004,6 @@ class AggregateWriterTest {
         assertEquals(dir.resolve("aggregate.exec"), AggregateWriter.resolve(dir, "aggregate.exec"));
         Path abs = dir.resolve("sub").resolve("x.exec").toAbsolutePath();
         assertEquals(abs, AggregateWriter.resolve(dir, abs.toString()));
-        assertFalse(AggregateWriter.resolve(dir, "x.exec").isAbsolute() && !dir.isAbsolute());
     }
 
     private static byte[] readBytes(String fqcn) throws Exception {
@@ -894,6 +1030,16 @@ class AggregateWriterTest {
             }
             return super.loadClass(name, resolve);
         }
+    }
+}
+
+/** Top-level SUT for AggregateWriterTest — compiles to io/pjacoco/agent/output/AggTarget.class. */
+class AggTarget {
+    public int classify(int n) {
+        if (n < 0) {
+            return -1;
+        }
+        return 1;
     }
 }
 ```
@@ -926,8 +1072,10 @@ import org.jacoco.core.runtime.RuntimeData;
  */
 public final class AggregateWriter {
 
-    /** Collect the whole-run data and serialize it to {@code aggregateFile} (resolved under {@code outDir}). */
-    public void write(Path outDir, String aggregateFile, RuntimeData data, long stoppedAtMillis) throws Exception {
+    /** Collect the whole-run data and serialize it to {@code aggregateFile} (resolved under {@code outDir}).
+     *  {@code collect} populates the SessionInfoStore with the runtime's own session (id + dump time),
+     *  so no timestamp argument is needed. */
+    public void write(Path outDir, String aggregateFile, RuntimeData data) throws Exception {
         ExecutionDataStore execStore = new ExecutionDataStore();
         SessionInfoStore sessionStore = new SessionInfoStore();
         data.collect(execStore, sessionStore, false);
@@ -1032,101 +1180,122 @@ git add agent/src/main/java/io/pjacoco/agent/probe/ProbeInstrumentation.java
 git commit -m "refactor(agent): retain + return the global RuntimeData from install"
 ```
 
-### Task 10: `Bootstrap` — bind registry, retain `RuntimeData`, aggregate dump, JUnit4 activator
+### Task 10: `Bootstrap` — bind registry, retain `RuntimeData`, aggregate dump
 
-This task wires CoverageControl, the aggregate shutdown dump, and (after Task 11) the JUnit4 activator. The aggregate dump is verified end-to-end by AC-IP5 (Task 3); here we make the wiring compile and behave.
+This task wires `CoverageControl` and the aggregate shutdown dump. The JUnit 4 activator install is added in **Task 11** (after its class exists) — so this task has no forward dependency and is independently compilable/committable. The aggregate dump is verified end-to-end by AC-IP5 (Task 3).
 
 **Files:**
 - Modify: `agent/src/main/java/io/pjacoco/agent/Bootstrap.java`
 
-- [ ] **Step 1: Reorder so `RuntimeData` + registry are available before the shutdown hook, and add the aggregate dump**
+- [ ] **Step 1: Replace `Bootstrap.premain` with the restructured version**
 
-In `Bootstrap.premain`, make these changes:
-
-(a) Add imports at the top with the other `io.pjacoco.agent.*` imports:
+Add these imports alongside the other `io.pjacoco.agent.*` imports:
 
 ```java
 import io.pjacoco.agent.api.CoverageControl;
-import io.pjacoco.agent.inbound.junit4.JUnit4InboundActivator;
 import io.pjacoco.agent.output.AggregateWriter;
 import org.jacoco.core.runtime.RuntimeData;
 ```
 
-(b) Right after the `registry` is constructed (after the `TestStoreRegistry registry = new TestStoreRegistry(...)` statement) and before the manifest block, bind it:
+Replace the entire `premain` method body with:
 
 ```java
+    public static void premain(String args, Instrumentation inst) throws Exception {
+        AgentOptions options = AgentOptions.parse(args);
+        Metrics metrics = new Metrics();
+        AgentLog log = new AgentLog();
+
+        String commitSha = options.commitSha() != null ? options.commitSha()
+                : System.getenv("PJACOCO_COMMIT");
+
+        final Path outDir = Paths.get(options.outputDir());
+        final TestStoreRegistry registry = new TestStoreRegistry(
+                outDir, new ExecWriter(), metrics, log,
+                options.autoRegister(), options.maxStores(), new java.util.function.LongSupplier() {
+                    public long getAsLong() { return System.currentTimeMillis(); }
+                });
+
+        // In-JVM activation API: the testkit reaches this reflectively; the JUnit 4 runLeaf advice calls it.
         CoverageControl.bindRegistry(registry);
-```
 
-(c) Move probe instrumentation **above** the control-endpoint block and capture the `RuntimeData`. Delete the existing line near the bottom:
+        // Global meta header, written once at startup (persists commitSha, no per-stop contention).
+        try {
+            Files.createDirectories(outDir);
+            String header = new Json()
+                    .put("schemaVersion", 1)
+                    .put("jacocoVersion", "0.8.12")
+                    .put("commitSha", commitSha)        // null -> omitted
+                    .put("precision", "line")
+                    .toString();
+            Files.write(outDir.resolve("manifest.json"), header.getBytes("UTF-8"));
+        } catch (Exception e) {
+            log.warn("manifest", "could not write manifest header: " + e);
+        }
 
-```java
-        // Probe instrumentation: jacoco-internal body-only advice + jacoco Instrumenter transformer + runtime.
-        ProbeInstrumentation.install(inst, options);
-```
+        CoverageBridge.bindMetrics(metrics);
 
-and instead, immediately after `CoverageBridge.bindMetrics(metrics);`, add:
-
-```java
         // Retain the global RuntimeData so the shutdown hook can dump the whole-run aggregate.
         final RuntimeData runtimeData = ProbeInstrumentation.install(inst, options);
-```
 
-(d) In the shutdown-hook `Runnable.run()`, add the aggregate dump AFTER `reg.dumpRemainingAsPartial()` and BEFORE `endpoint.stop()`. Replace the run body:
-
-```java
-                public void run() {
-                    reg.dumpRemainingAsPartial();
-                    endpoint.stop();
-                    l.info(m.summary());
-                }
-```
-
-with:
-
-```java
-                public void run() {
-                    reg.dumpRemainingAsPartial();
-                    if (options.aggregate()) {
-                        try {
-                            new AggregateWriter().write(outDir, options.aggregateFile(),
-                                    runtimeData, System.currentTimeMillis());
-                        } catch (Exception e) {
-                            l.warn("aggregate", "failed to write whole-run aggregate: " + e);
-                        }
-                    }
-                    endpoint.stop();
-                    l.info(m.summary());
-                }
-```
-
-(Note: `options` and `outDir` are effectively final locals already in scope; reference them directly. If the compiler complains about capture, add `final AgentOptions opts = options; final Path aggOut = outDir;` above the hook and use those.)
-
-(e) Install the JUnit 4 activator after the servlet activator, gated on `junit4Auto`:
-
-```java
-        if (options.junit4Auto()) {
-            new JUnit4InboundActivator().install(inst);
+        // Best-effort control endpoint (the in-process path never calls it; a bind clash is harmless there).
+        final ControlEndpoint[] endpointRef = new ControlEndpoint[1];
+        try {
+            ControlEndpoint endpoint = new ControlEndpoint(registry, options.controlHost(), options.controlPort());
+            int port = endpoint.start();
+            endpointRef[0] = endpoint;
+            log.info("control endpoint on " + options.controlHost() + ":" + port);
+        } catch (Exception e) {
+            log.warn("control", "failed to start control endpoint: " + e);
         }
+
+        // Shutdown hook registered UNCONDITIONALLY (independent of endpoint start) so the default-on
+        // aggregate dump and the partial-store dump always run — even when a port-bind clash skips the
+        // endpoint. Order: partial dump -> aggregate -> stop endpoint (if started).
+        final AgentOptions opts = options;
+        final Metrics m = metrics;
+        final AgentLog l = log;
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+            public void run() {
+                registry.dumpRemainingAsPartial();
+                if (opts.aggregate()) {
+                    try {
+                        new AggregateWriter().write(outDir, opts.aggregateFile(), runtimeData);
+                    } catch (Exception e) {
+                        l.warn("aggregate", "failed to write whole-run aggregate: " + e);
+                    }
+                }
+                if (endpointRef[0] != null) {
+                    endpointRef[0].stop();
+                }
+                l.info(m.summary());
+            }
+        }));
+
+        // Inbound activation: resolve TestStore from the registry per request, set/clear CoverageContext.
+        new ServletInboundActivator(registry, metrics, log).install(inst);
+
+        // (Task 11 inserts the JUnit 4 activator install here.)
+
+        log.info("agent installed (output=" + options.outputDir()
+                + ", mode=" + (options.autoRegister() ? "auto-register" : "strict") + ")");
+    }
 ```
 
-- [ ] **Step 2: Verify compile (JUnit4InboundActivator lands in Task 11; until then this won't compile)**
-
-This task depends on Task 11's class existing. **Implement Task 11 first if doing strict per-task compiles**, or add the import and the call now and let Task 11 satisfy it. Recommended order: do Task 11 (create `JUnit4InboundActivator` + `RunLeafAdvice`), then return to complete Step 1(e) here.
+- [ ] **Step 2: Verify compile**
 
 Run: `./gradlew :agent:compileJava`
-Expected: BUILD SUCCESSFUL once Task 11's classes exist.
+Expected: BUILD SUCCESSFUL (all referenced classes — `CoverageControl`, `AggregateWriter`, `RuntimeData` — now exist from Tasks 6, 8, 9).
 
 - [ ] **Step 3: Run the full agent unit suite (no regression)**
 
 Run: `./gradlew :agent:test`
-Expected: PASS (existing + new unit tests).
+Expected: PASS (existing + new unit tests). AC-IP3 (`CoverageControlTest`) and `AggregateWriterTest` are green.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add agent/src/main/java/io/pjacoco/agent/Bootstrap.java
-git commit -m "feat(agent): bind CoverageControl, dump whole-run aggregate at shutdown, install JUnit4 activator"
+git commit -m "feat(agent): bind CoverageControl, dump whole-run aggregate at shutdown (hook always registered)"
 ```
 
 ---
@@ -1332,15 +1501,37 @@ public final class JUnit4InboundActivator implements InboundActivator {
 Run: `./gradlew :agent:test --tests 'io.pjacoco.agent.inbound.junit4.RunLeafAdviceTest'`
 Expected: PASS.
 
-- [ ] **Step 6: Complete Task 10 Step 1(e) (Bootstrap install call) now that the class exists, then compile**
+- [ ] **Step 6: Wire the activator into `Bootstrap` (gated on `junit4Auto`)**
 
-Run: `./gradlew :agent:compileJava`
-Expected: BUILD SUCCESSFUL.
+In `Bootstrap.java`, add the import:
 
-- [ ] **Step 7: Commit**
+```java
+import io.pjacoco.agent.inbound.junit4.JUnit4InboundActivator;
+```
+
+and replace the placeholder line left by Task 10:
+
+```java
+        // (Task 11 inserts the JUnit 4 activator install here.)
+```
+
+with:
+
+```java
+        if (options.junit4Auto()) {
+            new JUnit4InboundActivator().install(inst);
+        }
+```
+
+- [ ] **Step 7: Compile + run the agent unit suite**
+
+Run: `./gradlew :agent:compileJava && ./gradlew :agent:test`
+Expected: BUILD SUCCESSFUL; PASS.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add agent/src/main/java/io/pjacoco/agent/inbound/junit4/ agent/src/test/java/io/pjacoco/agent/inbound/junit4/
+git add agent/src/main/java/io/pjacoco/agent/inbound/junit4/ agent/src/test/java/io/pjacoco/agent/inbound/junit4/ agent/src/main/java/io/pjacoco/agent/Bootstrap.java
 git commit -m "feat(agent): JUnit4InboundActivator + RunLeafAdvice (zero-touch runLeaf weave)"
 ```
 
@@ -1416,7 +1607,8 @@ public final class InProcessBridge {
     private static Method isReadyM;
     private static Method activateM;
     private static Method deactivateM;
-    private static volatile boolean warned;
+    private static final java.util.concurrent.atomic.AtomicBoolean WARNED =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private InProcessBridge() {}
 
@@ -1424,19 +1616,22 @@ public final class InProcessBridge {
         if (resolved) {
             return;
         }
-        resolved = true;
-        Class<?> c = load();
-        if (c == null) {
-            return;
-        }
         try {
-            isReadyM = c.getMethod("isReady");
-            activateM = c.getMethod("activate", String.class, String.class);
-            deactivateM = c.getMethod("deactivate", String.class, String.class);
+            Class<?> c = load();
+            if (c != null) {
+                isReadyM = c.getMethod("isReady");
+                activateM = c.getMethod("activate", String.class, String.class);
+                deactivateM = c.getMethod("deactivate", String.class, String.class);
+            }
         } catch (Throwable t) {
             isReadyM = null;
             activateM = null;
             deactivateM = null;
+        } finally {
+            // Set LAST: a concurrent caller that reads resolved==true (outside this monitor) is then
+            // guaranteed to see the fully-assigned handles. (All readers also enter this synchronized
+            // method first, so the monitor already establishes the happens-before; this is belt + braces.)
+            resolved = true;
         }
     }
 
@@ -1501,10 +1696,9 @@ public final class InProcessBridge {
     }
 
     private static void warnOnce() {
-        if (warned) {
-            return;
+        if (!WARNED.compareAndSet(false, true)) {
+            return;   // atomic: exactly one thread ever wins, even under parallel execution
         }
-        warned = true;
         if (Pjacoco.controlUrl() != null) {
             return;   // black-box path: a local agent is expected to be absent; the warning would mislead
         }
@@ -1691,23 +1885,46 @@ git commit -m "test(testkit-junit5): guard the services file lists exactly the i
 
 - [ ] **Step 1: Write the failing test**
 
+> **Why JUnit 5 style:** `testkit-junit4/build.gradle.kts` runs `tasks.test { useJUnitPlatform() }` with **no Vintage engine**. A test written with JUnit 4 `@Test`/`@Rule` would NOT be discovered (0 tests run, false green). The existing `PjacocoRuleTest` drives the rule via `rule.apply(base, desc).evaluate()` from a JUnit 5 test — do the same here.
+
 ```java
 package io.pjacoco.testkit.junit4;
 
-import io.pjacoco.testkit.junit4.PjacocoInProcessRule;
-import org.junit.Rule;
-import org.junit.Test;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The rule is a no-op without the agent; assert it brackets a JUnit 4 test without throwing.
- *  (Per-test routing is verified end-to-end by the gradle-plugin functional test AC-IP2.) */
-public class PjacocoInProcessRuleTest {
+import org.junit.jupiter.api.Test;
+import org.junit.runner.Description;
+import org.junit.runners.model.Statement;
 
-    @Rule
-    public final PjacocoInProcessRule pjacoco = new PjacocoInProcessRule();
+/** Drives {@link PjacocoInProcessRule} via its JUnit 4 TestWatcher API (apply().evaluate()), exactly
+ *  like the existing PjacocoRuleTest; assertions run on the JUnit 5 platform. Without an agent the
+ *  InProcessBridge is a no-op, so the rule must bracket the body without throwing. (Per-test routing
+ *  is verified end-to-end by the gradle-plugin functional test AC-IP2.) */
+class PjacocoInProcessRuleTest {
+
+    static class SampleSuite { }
 
     @Test
-    public void runsCleanlyWithoutAnAgent() {
-        int x = 1 + 1;
+    void bracketsAPassingTestWithoutThrowing() throws Throwable {
+        PjacocoInProcessRule rule = new PjacocoInProcessRule();
+        Description desc = Description.createTestDescription(SampleSuite.class, "doesThing");
+        final boolean[] ran = { false };
+        Statement base = new Statement() {
+            public void evaluate() { ran[0] = true; }
+        };
+        rule.apply(base, desc).evaluate();
+        assertTrue(ran[0], "rule must run the wrapped test body");
+    }
+
+    @Test
+    void propagatesAFailingTest() {
+        PjacocoInProcessRule rule = new PjacocoInProcessRule();
+        Description desc = Description.createTestDescription(SampleSuite.class, "boom");
+        Statement base = new Statement() {
+            public void evaluate() { throw new AssertionError("boom"); }
+        };
+        assertThrows(AssertionError.class, () -> rule.apply(base, desc).evaluate());
     }
 }
 ```
@@ -1715,7 +1932,7 @@ public class PjacocoInProcessRuleTest {
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `./gradlew :testkit-junit4:test --tests 'io.pjacoco.testkit.junit4.PjacocoInProcessRuleTest'`
-Expected: FAIL — `PjacocoInProcessRule` does not exist.
+Expected: FAIL — `PjacocoInProcessRule` does not exist (compile error). (The test IS discovered because it is a JUnit 5 test.)
 
 - [ ] **Step 3: Implement the rule**
 
@@ -1830,11 +2047,17 @@ class PjacocoArgsInProcessTest {
 Run: `./gradlew :gradle-plugin:test --tests 'io.pjacoco.gradle.PjacocoArgsInProcessTest'`
 Expected: FAIL — the 8-arg `javaagent` overload does not exist (compile error).
 
-- [ ] **Step 3: Extend `PjacocoArgs.javaagent`**
+- [ ] **Step 3: Extend `PjacocoArgs.javaagent` (add the 8-arg form; keep the 5-arg as a delegating overload)**
 
-Replace the `javaagent(...)` method signature and body in `PjacocoArgs.java`:
+This avoids breaking the 3 existing 5-arg calls in `PjacocoArgsTest` (they keep compiling). Replace the existing 5-arg `javaagent(...)` method body with the 8-arg form, then add a thin 5-arg overload above it that delegates with the agent defaults:
 
 ```java
+    /** Backward-compatible 5-arg form: aggregate on, default aggregate file, junit4Auto on. */
+    static String javaagent(String agentJarPath, int port, String destfile,
+                            List<String> includes, List<String> excludes) {
+        return javaagent(agentJarPath, port, destfile, includes, excludes, true, null, true);
+    }
+
     static String javaagent(String agentJarPath, int port, String destfile,
                             List<String> includes, List<String> excludes,
                             boolean aggregate, String aggregateFile, boolean junit4Auto) {
@@ -1860,6 +2083,8 @@ Replace the `javaagent(...)` method signature and body in `PjacocoArgs.java`:
         return "-javaagent:" + agentJarPath + "=" + opts;
     }
 ```
+
+(The existing `PjacocoArgsTest` calls the 5-arg overload and stays green; `PjacocoPlugin`'s `agentJvmArg` lambda is switched to the 8-arg form in Step 6.)
 
 - [ ] **Step 4: Run to verify the `PjacocoArgs` test passes**
 
@@ -1962,7 +2187,7 @@ Replace the `AgentArgs` static class with the autodetection-aware version:
 - [ ] **Step 7: Run the full gradle-plugin unit suite (excluding the still-red functional tests)**
 
 Run: `./gradlew :gradle-plugin:test --tests 'io.pjacoco.gradle.PjacocoArgsInProcessTest' --tests 'io.pjacoco.gradle.PjacocoArgsTest'`
-Expected: PASS (PjacocoArgsTest is the existing unit test; confirm the new overload didn't break it — if `PjacocoArgsTest` called the old 5-arg signature, update those calls to the 8-arg form with `true, null, true`).
+Expected: PASS (the existing `PjacocoArgsTest`'s three 5-arg calls compile unchanged against the delegating overload from Step 3; the new `PjacocoArgsInProcessTest` exercises the 8-arg form).
 
 - [ ] **Step 8: Commit**
 
@@ -2047,10 +2272,10 @@ Expected: PASS (CoverageControl now in the shaded jar, un-relocated).
 Run: `./gradlew :gradle-plugin:test --tests 'io.pjacoco.gradle.PjacocoInProcessFunctionalTest'`
 Expected: PASS. If `aggregate.exec` is missing, confirm Task 10(d) added the dump; if sidecars are missing, confirm the services file is in the junit5 jar and `autoDetectExtensions` injects the system property.
 
-- [ ] **Step 4: Run AC-IP2 green**
+- [ ] **Step 4: Run AC-IP2 green (both consumer builds)**
 
 Run: `./gradlew :gradle-plugin:test --tests 'io.pjacoco.gradle.PjacocoJUnit4InProcessFunctionalTest'`
-Expected: PASS. If the `@Rule` sidecar shows `result=unknown` (last-writer race noted in Task 4), split the rule case into a second consumer build with `junit4Auto=false` and assert `passed` there.
+Expected: PASS (both `zeroTouchAgentPath_parameterized_andTimeout` and `junit4AutoFalse_disablesAgentPath_butRuleStillWorks`). If the `@Parameterized` sidecar file names differ from `run[0]`/`run[1]`, read the `build/pjacoco` listing from the failing test's output and adjust the expected names (the invariant is two distinct `.exec`).
 
 - [ ] **Step 5: Commit any fixups**
 
@@ -2230,7 +2455,7 @@ Dispatch a spec-compliance reviewer (the `subagent-driven-development` spec-revi
 
 - [ ] **Step 3: Code-quality review (SECOND)**
 
-Dispatch `pr-review-toolkit:code-reviewer` over the diff (correctness, concurrency, resource handling, silent failures, test gaps). Pay attention to: the Bootstrap shutdown-hook capture of `runtimeData`/`outDir` (effectively-final), the InProcessBridge classloader resolution, and the last-writer race in the JUnit4 `@Rule` + zero-touch overlap. Triage every finding.
+Dispatch `pr-review-toolkit:code-reviewer` over the diff (correctness, concurrency, resource handling, silent failures, test gaps). Pay attention to: the Bootstrap shutdown-hook capturing `runtimeData`/`endpointRef`/`outDir` and running unconditionally, the `InProcessBridge` classloader resolution + once-only warning, the empty-store guard in `CoverageControl.deactivate`, and the agent-side `runLeaf` vs explicit `@Rule` interaction (the `stop-missing` warning when both are active on one test — the spec says don't combine them). Triage every finding.
 
 - [ ] **Step 4: Re-run any tests touched by review fixes**
 
@@ -2253,9 +2478,26 @@ Use the `finishing-a-development-branch` skill (rebase merge only — this repo 
 - §7a aggregate default ON (option, path resolution, AggregateWriter, shutdown-hook ordering, RuntimeData retain) → Tasks 7, 8, 9, 10. ✓
 - §7b JUnit 5 auto-registration (services file single entry, autoDetectExtensions, mixed-mode) → Tasks 13, 14, 16. ✓
 - §7c JUnit 4 zero-touch (runLeaf weave, result=unknown, timeout limitation, junit4Auto opt-out) → Tasks 10, 11. ✓
-- §8 AC-IP1–IP6 → Tasks 3 (IP1/IP5/IP6), 4 (IP2), 6 (IP3), 1 (IP4). ✓
+- §8 AC-IP1–IP6 → Tasks 3 (IP1: class-identity via ExecutionDataReader + IP5: aggregate superset & `aggregate=false` negative + IP6), 4 (IP2: zero-touch `unknown`, `@Rule` `passed`, `junit4Auto=false` negative, `@Parameterized` distinct `.exec`, `@Test(timeout)` empty), 6 (IP3), 1 (IP4). ✓
 - §9 DoD (docs, regression) → Tasks 20, 21. ✓
 
-**Placeholder scan:** No TBD/TODO; every code step shows the code; every test step shows the assertion. The one judgment call (JUnit4 `@Rule` last-writer race) has an explicit fallback instruction (split consumer build with `junit4Auto=false`). ✓
+**Placeholder scan:** No TBD/TODO; every code step shows the code; every test step shows the assertion. The two residual judgment calls each have an explicit fallback: the `@Parameterized` exact sidecar name (read the dir listing and adjust; invariant = two distinct `.exec`), and the `aggregate.exec` parent-dir creation (guarded in `AggregateWriter.resolve`). ✓
 
-**Type consistency:** `CoverageControl.{bindRegistry,isReady,activate,deactivate}`, `TestStoreRegistry.{peek,discard}`, `AggregateWriter.{write,resolve}`, `AgentOptions.{aggregate,aggregateFile,junit4Auto}`, `PjacocoArgs.javaagent(8-arg)`, `AgentArgs(3-arg ctor)`, `RunLeafAdvice.{activate,deactivate}` — names used consistently across tasks and tests. testId is FQN (`getName()` / `Description.getClassName()`) everywhere. ✓
+**Type consistency:** `CoverageControl.{bindRegistry,isReady,activate,deactivate}`, `TestStoreRegistry.{peek,discard}`, `AggregateWriter.{write(3-arg),resolve}`, `AgentOptions.{aggregate,aggregateFile,junit4Auto}`, `PjacocoArgs.javaagent(5-arg delegating + 8-arg)`, `AgentArgs(3-arg ctor)`, `RunLeafAdvice.{activate,deactivate}` — names used consistently across tasks and tests. testId is FQN (`getName()` / `Description.getClassName()`) everywhere. ✓
+
+---
+
+## Review log (three-model, 2026-06-17)
+
+Reviewed by Claude Sonnet (`design-doc-reviewer`), Gemini 3.5 Flash (High), and OpenAI GPT-5.5 (High), all repo-grounded. All findings incorporated (each was located and verified against the repo; none rejected):
+
+- **AggregateWriter test fixture** — nested `AggTarget` compiles to `AggregateWriterTest$AggTarget.class`, so `readBytes(NAME)` would NPE. Made `AggTarget` a top-level class. (Sonnet I1, Gemini I2, GPT I2)
+- **JUnit 4 rule test** — `testkit-junit4` has no Vintage engine, so a JUnit-4-annotated test under `useJUnitPlatform()` would not be discovered (false green). Rewrote it JUnit-5-style driving `rule.apply(base, desc).evaluate()`, matching the existing `PjacocoRuleTest`. (Sonnet I2, GPT I1)
+- **PjacocoArgs signature change** — 3 existing 5-arg calls in `PjacocoArgsTest` would break compilation. Kept a delegating 5-arg overload alongside the new 8-arg form. (Sonnet I6, GPT I3)
+- **AC-IP2 split** — combining `@Rule` + zero-touch is spec-prohibited and produces a `stop-missing` warning (Sonnet I7 corrected the original "overwrite" analysis). Split AC-IP2 into two consumer builds and added the missing negatives: `junit4Auto=false` disables the agent path, `@Parameterized` distinct `.exec`, `@Test(timeout)` empty. (Sonnet I5/I7, Gemini I3, GPT I4/I6)
+- **Bootstrap shutdown hook** — was registered inside the control-endpoint `try`, so a port-bind failure would skip the default-on aggregate dump. Register the hook unconditionally with a nullable endpoint. (Sonnet I9, Gemini I4, GPT I7)
+- **AC-IP5 strengthened** — assert the aggregate is a probe-level superset of each per-test `.exec` and add the `aggregate=false` negative build. (Sonnet I4, GPT I5)
+- **AC-IP1 strengthened** — assert *which* class each `.exec` holds (mutual exclusion) via `ExecutionDataReader`, not just `classCount=1`. (Sonnet I8)
+- **Task 10↔11 forward dependency** — removed by moving the JUnit 4 activator install into Task 11. (Sonnet I3)
+- **InProcessBridge** — set `resolved` in a `finally`; made the one-time warning an `AtomicBoolean.compareAndSet`. (Gemini I1, GPT I8)
+- **AggregateWriter** — dropped the unused `stoppedAtMillis` parameter. (Gemini I5)
