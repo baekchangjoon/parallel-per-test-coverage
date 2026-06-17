@@ -47,7 +47,8 @@ either path.
 
 ```
 agent/
-  io.pjacoco.agent.api.CoverageControl     # NEW: in-JVM activation API (not relocated; stable FQN contract)
+  io.pjacoco.agent.api.CoverageControl                 # NEW: in-JVM activation API (not relocated; stable FQN)
+  io.pjacoco.agent.inbound.junit4.JUnit4InboundActivator  # NEW: ByteBuddy advice on JUnit4 runLeaf (§7c)
 
 testkit-core/
   io.pjacoco.testkit.inprocess.InProcessBridge   # NEW: reflectively calls CoverageControl (best-effort)
@@ -135,9 +136,12 @@ Gradle Worker-API / custom-classloader isolation can break the lookup; the bridg
 extensions' `getSimpleName()`, kept short for headers) avoids collisions between same-named test classes
 in different packages — the in-process path has no header-length constraint.
 
-**Known limitation (documented):** parameterized / repeated / dynamic tests share one `testId` per
-method, so each invocation overwrites the previous store (`TestStoreRegistry` retry-overwrite) and only
-the last invocation's coverage is kept in the `.exec`. A per-invocation id strategy is deferred.
+**Known limitation (JUnit 5 only):** `@ParameterizedTest` / `@RepeatedTest` / `@TestFactory` share one
+method-name `testId` per method, so each invocation overwrites the previous store (`TestStoreRegistry`
+retry-overwrite) and only the last invocation's coverage is kept. A per-invocation id strategy is
+deferred. **JUnit 4 `@Parameterized` is unaffected:** `Description.getMethodName()` returns
+`test[0]`/`test[1]`/…, so the agent-side path (§7c) gets a distinct `testId` (and a separate `.exec`)
+per parameter set.
 
 Distinct from the existing `PjacocoExtension`/`PjacocoRule` (HTTP control plane + baggage for the
 black-box path). One extension = one activation model; the user picks by test type.
@@ -241,11 +245,44 @@ So a unit suite needs no `@ExtendWith` on every class:
   `registry.stop`/`discard` for an already-removed testId → a **harmless** `stop-missing` warning per
   test (no data loss — the empty-store guard already suppressed the in-process write). Use separate
   tasks, or set `autoDetectExtensions.set(false)` for the black-box task. README states this.
-- **JUnit 4:** no auto-registration. JUnit 4 has no dependency-only equivalent of JUnit 5 autodetection
-  (a `RunListener` needs build-level registration and has weaker test-thread guarantees), so per-test
-  JUnit 4 uses the explicit `@Rule PjacocoInProcessRule` (one line per class). The **zero-touch,
-  framework-agnostic** path that matches stock jacoco's JUnit 4 behavior is the **whole-run aggregate**
-  mode (§7a) — no test-code change, single `.exec`.
+- **JUnit 4:** zero-touch is provided **agent-side** (no JUnit 5-style services/autodetection for
+  JUnit 4) — see §7c. The explicit `@Rule PjacocoInProcessRule` remains available for explicit control
+  (or when the agent-side path is turned off).
+
+## 7c. JUnit 4 zero-touch (agent-side `runLeaf` activation)
+
+JUnit 4 has no dependency-only auto-apply mechanism (a `RunListener` needs build config + has weaker
+test-thread guarantees). Instead the agent brackets each JUnit 4 test by weaving JUnit 4's per-test
+choke point — exactly the existing `ServletInboundActivator` pattern, but for JUnit 4's runner.
+
+- **New agent inbound activator** `io.pjacoco.agent.inbound.junit4.JUnit4InboundActivator` (an
+  `InboundActivator`, installed by `Bootstrap`): ByteBuddy advice on
+  `org.junit.runners.ParentRunner.runLeaf(Statement, Description, RunNotifier)` — the single method that
+  runs one leaf test (its `@Before`/`@Test`/`@After`/rules) via `statement.evaluate()` **inline on the
+  calling thread**.
+- **Advice** (`RunLeafAdvice`, `suppress = Throwable`): `@OnMethodEnter` reads the `Description` arg
+  **reflectively** (`getClassName()`/`getMethodName()` — no JUnit 4 dependency on the agent, like
+  `ServletAdvice` reading the baggage header) and calls `CoverageControl.activate("Class#method", null)`;
+  `@OnMethodExit` calls `CoverageControl.deactivate("Class#method", "unknown")`. The result is the fixed
+  string `"unknown"` because `runLeaf` catches all test exceptions internally (`EachTestNotifier`), so the
+  advice has no pass/fail signal (the `@Rule` path, via `TestWatcher`, does and writes `passed`/`failed`).
+  Because `runLeaf` calls `evaluate()` inline, activate/deactivate bracket the test on its own thread
+  (correct under sequential, surefire-parallel, and the JUnit Vintage engine, which still drives
+  `ParentRunner`).
+- **Limitation — `@Test(timeout=X)` / `@Rule Timeout`:** both delegate to JUnit 4's `FailOnTimeout`,
+  which runs the test body on a **newly spawned thread**; `CoverageContext` is set on the runner thread,
+  not that one, so coverage for such tests is silently empty under the zero-touch path. (Same class as
+  the §2 async limitation, but caused by JUnit's own infrastructure.) Use the explicit `@Rule` won't
+  help either; such tests need manual context propagation (phase 2).
+- **Zero-touch:** no `@Rule`, no build config, no extra dependency — only the already-attached agent.
+- **Opt-out:** agent option `junit4Auto` (default **true**; set `junit4Auto=false` to disable). Gradle
+  `pjacoco { junit4Auto.set(false) }` / Maven config compose it. `AgentOptions` gains the accessor.
+  `Bootstrap` installs the activator only when `junit4Auto` is true.
+- **Safety:** in an out-of-process app JVM `ParentRunner` is never loaded, so the advice never matches
+  (no effect). The empty-store guard (§7b) means a test whose SUT runs elsewhere writes no file.
+- **Do not combine with `@Rule PjacocoInProcessRule`** on the same test (redundant nested activate →
+  retry-overwrite + a harmless `stop-missing` warning). For a JUnit 4 **servlet black-box** suite, set
+  `junit4Auto=false` and use the HTTP/servlet path. README states this.
 
 ## 8. E2E / acceptance tests (definition of done)
 
@@ -258,7 +295,11 @@ Authored first (red), driven green by inner-loop unit TDD.
   sidecar / `.exec`): testA's store contains **SutA and not SutB**, testB's contains **SutB and not
   SutA** (mutual exclusion — proves routing correctness, not just absence of leakage; mirrors
   `SpecAcceptanceE2E.perTestIsolation`). The agent is attached to the test JVM via the plugin `attachTo`.
-- **AC-IP2 (JUnit 4):** a `PjacocoInProcessRule` (Vintage) variant produces per-test `.exec`.
+- **AC-IP2 (JUnit 4):** both JUnit 4 paths produce per-test `.exec` — (a) the **agent-side zero-touch**
+  path (no `@Rule`, `junit4Auto` on; sidecar `result="unknown"`) and (b) the explicit `@Rule
+  PjacocoInProcessRule` (`result="passed"`). Assert `junit4Auto=false` disables the agent-side path; a
+  `@Parameterized` test yields a separate `.exec` per parameter set; a `@Test(timeout=X)` test yields no
+  `.exec` (documented limitation — not a failure).
 - **AC-IP3 (unit):** agent `CoverageControl` (activate sets context + creates store, null-guarded;
   deactivate flushes) and the testkit `InProcessBridge` (no-op + one-time warn when the agent is absent)
   have unit tests.
@@ -332,3 +373,14 @@ second Claude Sonnet fallback — plus the eventual GPT-5.2 output. Incorporated
 - `CoverageControl` null-safety when registry unbound (Gemini, GPT); thread-premise note + AC guard (GPT).
 
 No findings rejected.
+
+## 12. Review log — §7c JUnit 4 agent-side activation
+
+Focused Claude Sonnet review (verified against JUnit 4.13.2 bytecode): confirmed `ParentRunner.runLeaf`
+is the correct `protected final` choke point, ByteBuddy advice can instrument it, all subclasses
+(Block/Parameterized/Suite/Vintage) flow through it, and `statement.evaluate()` runs inline on the
+calling thread. Incorporated: `deactivate` result fixed to `"unknown"` (runLeaf swallows exceptions, no
+pass/fail signal); `@Test(timeout)`/`@Rule Timeout` → `FailOnTimeout` runs on a new thread → silently
+empty, documented as a §7c limitation + AC-IP2 negative assertion; corrected the parameterized-test
+limitation to JUnit 5 only (JUnit 4 `@Parameterized` gets distinct `test[i]` testIds). No findings
+rejected.
