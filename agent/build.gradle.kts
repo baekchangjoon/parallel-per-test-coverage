@@ -31,7 +31,12 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-tasks.test { useJUnitPlatform() }
+tasks.test {
+    useJUnitPlatform()
+    dependsOn(tasks.shadowJar)
+    val shadedJar = tasks.shadowJar.flatMap { it.archiveFile }
+    doFirst { systemProperty("pjacoco.shadedJar", shadedJar.get().asFile.absolutePath) }
+}
 
 tasks.shadowJar {
     archiveFileName.set("jacocoagent-parallel.jar")
