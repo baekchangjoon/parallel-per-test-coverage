@@ -151,8 +151,10 @@ class CalcTest {   // JUnit 4
 ```
 
 > To turn auto-apply off: JUnit 5 extension auto-registration is `pjacoco { autoDetectExtensions.set(false) }`,
-> the JUnit 4 agent handling is `pjacoco { junit4Auto.set(false) }`. (Maven:
-> `<autoDetectExtensions>false</autoDetectExtensions>` / `<junit4Auto>false</junit4Auto>`.)
+> the JUnit 4 agent handling is `pjacoco { junit4Auto.set(false) }`. (On Maven there is no plugin flag for
+> JUnit 5 auto-registration — control it via `junit-platform.properties`
+> (`junit.jupiter.extensions.autodetection.enabled=true`) or surefire `systemPropertyVariables`; only the
+> JUnit 4 handling is turned off with `<junit4Auto>false</junit4Auto>`.)
 
 ### JUnit 5 auto-registration on Maven
 
@@ -328,6 +330,10 @@ whole-run aggregate file, failure isolation / memory cap / observability, jacoco
 - JUnit 5 parameterized/repeated tests share one testId, so only the last invocation is kept.
 - Mixing the in-process and servlet paths in one test task: split them into separate tasks, or turn one
   off with the `autoDetectExtensions` / `junit4Auto` opt-out.
+- If a JUnit 4 test under the agent-side zero-touch path makes a synchronous in-process servlet call on
+  the test thread, the servlet activation clears the per-test context on exit and the remainder of that
+  test is not attributed — set `junit4Auto=false` for such suites, or keep the servlet (black-box) path
+  in a separate task.
 
 **Phase 2 (non-goals)**: async/thread-pool context propagation, reactive (WebFlux) / gRPC, drain mode,
 time-based TTL eviction, JMX, backend upload.
