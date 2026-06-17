@@ -196,7 +196,15 @@ stock-jacoco run — session name/timestamp/visit order are not normalized.)
   No change to instrumentation behavior.
 - **Independent of / additive to** the per-test path: the global `RuntimeData` accumulates every probe
   that fires (all tests + class init + untagged code), exactly like stock jacoco; per-test stores are
-  unaffected. Works in both out-of-process and in-process modes (one aggregate per agent JVM).
+  unaffected. It is **orthogonal to context and threading**, so it works in **all combinations** —
+  sequential or parallel, in-process or out-of-process (the per-test routing is the additive layer; the
+  aggregate is jacoco's always-populated base layer).
+- This is the **jacoco-parity, zero-touch** path for any framework (JUnit 4/5/TestNG): no test-code
+  change, single whole-run `.exec`.
+- **Caveats:** (1) **one aggregate per agent JVM** — if multiple SUT JVMs run (sharded out-of-process),
+  each writes its own aggregate; `jacococli merge` combines them (same as stock jacoco). (2) It is a
+  **shutdown-hook dump** (jacoco `dumponexit` equivalent); a hard kill (SIGKILL) that skips shutdown
+  hooks produces no aggregate. A mid-run / tcpserver dump is out of scope.
 - **Plugins:** Gradle `pjacoco { aggregateFile.set("jacoco.exec") }` and Maven
   `<configuration><aggregateFile>...</aggregateFile></configuration>` (PrepareAgentMojo gains the param)
   both compose it into the agent option string.
@@ -233,6 +241,11 @@ So a unit suite needs no `@ExtendWith` on every class:
   `registry.stop`/`discard` for an already-removed testId → a **harmless** `stop-missing` warning per
   test (no data loss — the empty-store guard already suppressed the in-process write). Use separate
   tasks, or set `autoDetectExtensions.set(false)` for the black-box task. README states this.
+- **JUnit 4:** no auto-registration. JUnit 4 has no dependency-only equivalent of JUnit 5 autodetection
+  (a `RunListener` needs build-level registration and has weaker test-thread guarantees), so per-test
+  JUnit 4 uses the explicit `@Rule PjacocoInProcessRule` (one line per class). The **zero-touch,
+  framework-agnostic** path that matches stock jacoco's JUnit 4 behavior is the **whole-run aggregate**
+  mode (§7a) — no test-code change, single `.exec`.
 
 ## 8. E2E / acceptance tests (definition of done)
 
