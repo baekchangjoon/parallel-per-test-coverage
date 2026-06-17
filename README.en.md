@@ -122,19 +122,36 @@ Synchronous in-JVM tests — pure unit tests, MockMvc, in-process integration te
 `.exec` per testId. The SUT runs **on the test thread**, so no HTTP request or servlet boundary is
 needed; each test method's start and end are the flush boundary.
 
+**Prerequisites (this path):** JUnit 5 (Jupiter) or JUnit 4 on the test classpath; JDK 8+ to run;
+JDK 17+ to build from source.
+
 **Recommended: plugin + testkit.** Add the `io.pjacoco.gradle` plugin and the `pjacoco-testkit-junit5`
 dependency, and the JUnit 5 extension applies across the whole suite automatically (no annotation).
-JUnit 4 is handled by the agent, so it needs no `@Rule` either.
+The Gradle plugin enables JUnit 5 extension autodetection for you, so no `@ExtendWith` is needed — on
+Maven you enable it via `junit-platform.properties` (covered under "JUnit 5 auto-registration on Maven"
+below). JUnit 4 is handled by the agent, so it needs no `@Rule` either.
+
+> The artifacts are not on Maven Central / the Gradle Plugin Portal yet (public release pending). For
+> now, build from source and install them locally with `publishToMavenLocal` — see
+> [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 ```kotlin
 plugins { id("io.pjacoco.gradle") version "1.1.0" }
 
-pjacoco { includes.set(listOf("com.example.*")) }   // the in-process path needs no control-url
+pjacoco {
+    attachTo.set(listOf("test"))          // the test task(s) to inject the agent into
+    includes.set(listOf("com.example.*")) // the in-process path needs no control-url
+}
 dependencies {
     testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.1.0")   // JUnit 5 applied automatically
     // JUnit 4 works from the agent alone — no dependency, no @Rule
 }
 ```
+
+**Run it / find the results.** Run the test task the agent is attached to (e.g. `./gradlew test`). The
+per-test files land in the output directory (Gradle default `build/pjacoco/`), one
+`<FQN>#<method>.exec` (plus a matching `.json` sidecar) per test, alongside a single whole-run
+`aggregate.exec`.
 
 **To register the testkit yourself** (e.g. with auto-apply turned off), name the extension/rule:
 
