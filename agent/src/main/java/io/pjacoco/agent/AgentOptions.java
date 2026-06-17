@@ -41,6 +41,13 @@ public final class AgentOptions {
     public int maxStores()      { return Integer.parseInt(get("maxstores", "1000")); }
     public String commitSha()   { return raw.get("commitSha"); }
 
+    /** Whether to dump the whole-run aggregate {@code .exec} at shutdown. Default true. */
+    public boolean aggregate() { return Boolean.parseBoolean(get("aggregate", "true")); }
+    /** Aggregate file name (relative to the output dir) or absolute path. Default {@code aggregate.exec}. */
+    public String aggregateFile() { return get("aggregateFile", "aggregate.exec"); }
+    /** Whether to weave JUnit 4's {@code ParentRunner.runLeaf} for zero-touch activation. Default true. */
+    public boolean junit4Auto() { return Boolean.parseBoolean(get("junit4Auto", "true")); }
+
     // passed through to jacoco-core instrumentation
     public String includes()    { return get("includes", "*"); }
     public String excludes()    { return get("excludes", ""); }
