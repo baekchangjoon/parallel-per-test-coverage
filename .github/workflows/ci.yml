@@ -106,13 +106,17 @@ jobs:
   # AC3: the Maven plugin + the maven-sample consumer, end-to-end, against locally published artifacts.
   maven-sample:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        jdk: ["11", "17", "21"]
     steps:
       - uses: actions/checkout@v4
-      - name: Set up JDK 17
+      - name: Set up JDK ${{ matrix.jdk }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: ${{ matrix.jdk }}
           cache: gradle
       - name: Publish agent + testkit to mavenLocal
         run: ./gradlew --no-daemon :agent:publishToMavenLocal :testkit-core:publishToMavenLocal
