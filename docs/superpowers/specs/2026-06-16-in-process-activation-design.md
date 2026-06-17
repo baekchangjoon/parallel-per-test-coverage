@@ -184,11 +184,17 @@ jacoco's single whole-run artifact can get it alongside the per-test files. (It 
 format and semantically the whole-run coverage; we do not claim byte-for-byte identity with a separate
 stock-jacoco run — session name/timestamp/visit order are not normalized.)
 
-- New agent option `aggregateFile=<path>` (default unset = **off**, no behavior change).
+- **Default ON.** Agent option `aggregate` (boolean, default **true**) toggles it; `aggregateFile=<path>`
+  (default **`aggregate.exec`**) names the file. Disable with `aggregate=false`. (The aggregate adds no
+  per-test overhead — the global `RuntimeData` is populated regardless; this only adds a one-time
+  shutdown dump.)
+- **Behavior-change note:** because it defaults on, a run now also writes one `aggregate.exec` in the
+  output dir (in addition to the per-test `<testId>.exec`). It is written at JVM shutdown, so in-test
+  assertions never see it mid-run; the regression gate confirms the existing suites stay green.
 - **Resolution:** absolute path → used as-is; otherwise resolved under the `destfile` output directory
   (`<destfile>/<aggregateFile>`). The path **must not contain `,` or `=`** (the agent option string is
-  comma-delimited `key=value` with no quoting). `AgentOptions` gains an `aggregateFile()` accessor
-  (default null).
+  comma-delimited `key=value` with no quoting). `AgentOptions` gains `aggregate()` (default true) and
+  `aggregateFile()` (default `aggregate.exec`) accessors.
 - **Write path:** `runtimeData.collect(store, new SessionInfoStore(), false)` yields a jacoco
   `ExecutionDataStore`; a new `AggregateWriter` writes it via `org.jacoco.core.data.ExecutionDataWriter`
   — **authored against `org.jacoco.*` in source exactly like `ExecWriter`**, so the shadow plugin
@@ -209,9 +215,13 @@ stock-jacoco run — session name/timestamp/visit order are not normalized.)
   each writes its own aggregate; `jacococli merge` combines them (same as stock jacoco). (2) It is a
   **shutdown-hook dump** (jacoco `dumponexit` equivalent); a hard kill (SIGKILL) that skips shutdown
   hooks produces no aggregate. A mid-run / tcpserver dump is out of scope.
-- **Plugins:** Gradle `pjacoco { aggregateFile.set("jacoco.exec") }` and Maven
-  `<configuration><aggregateFile>...</aggregateFile></configuration>` (PrepareAgentMojo gains the param)
-  both compose it into the agent option string.
+- **Plugins:** aggregate mode is on by default, so no config is needed to get `aggregate.exec`. To
+  rename it: Gradle `pjacoco { aggregateFile.set("jacoco.exec") }` / Maven
+  `<configuration><aggregateFile>...</aggregateFile></configuration>`. To disable it: Gradle
+  `pjacoco { aggregate.set(false) }` / Maven `<configuration><aggregate>false</aggregate></configuration>`.
+  Both `PjacocoGradleExtension` (a `Property<Boolean> aggregate` default true + `Property<String>
+  aggregateFile`) and `PrepareAgentMojo` (an `aggregate` boolean default true + `aggregateFile` param)
+  compose them into the agent option string.
 
 ## 7b. JUnit 5 auto-registration (zero per-test annotation)
 
@@ -305,11 +315,12 @@ Authored first (red), driven green by inner-loop unit TDD.
   have unit tests.
 - **AC-IP4 (build guard):** a test asserts `io/pjacoco/agent/api/CoverageControl.class` is present in the
   built shaded agent jar (FQN-stability regression guard).
-- **AC-IP5 (whole-run aggregate):** with `aggregateFile` set, after a run the single aggregate `.exec`
-  exists and, analyzed by jacoco's `Analyzer`, its covered lines are a **superset of** (contain) the
-  union of the per-test `.exec` covered lines, and it includes coverage from both SUT classes (it is the
-  whole-run jacoco artifact — a superset, since class-init / outside-boundary code is also recorded).
-  Default-unset produces no aggregate file (no regression).
+- **AC-IP5 (whole-run aggregate):** because aggregate mode defaults **on**, after a plain run the single
+  aggregate `.exec` (default name `aggregate.exec`) exists in the output dir and, analyzed by jacoco's
+  `Analyzer`, its covered lines are a **superset of** (contain) the union of the per-test `.exec` covered
+  lines, and it includes coverage from both SUT classes (it is the whole-run jacoco artifact — a
+  superset, since class-init / outside-boundary code is also recorded). Assert the negative too:
+  `aggregate=false` produces **no** aggregate file (and the per-test `.exec` are unchanged).
 - **AC-IP6 (auto-registration):** a unit suite with **no `@ExtendWith`** — only the `testkit-junit5`
   dependency + the plugin (`autoDetectExtensions` on) — produces per-test `.exec`. Assert (a) the
   empty-store guard: an activation that records nothing writes no file; (b) a clean in-process-only run
@@ -324,8 +335,10 @@ mechanism itself is already demonstrated by `ProbeRoutingIT` at the unit level.
 
 AC-IP1–IP6 green; full regression green; docs updated — README "Scope" notes in-process per-test
 coverage is now supported (synchronous in-JVM tests), the testkit usage section documents
-`PjacocoInProcessExtension`/`PjacocoInProcessRule` (with auto-registration) and the `aggregateFile`
-whole-run option, and the async/thread-pool + mixed-mode limitations are stated.
+`PjacocoInProcessExtension`/`PjacocoInProcessRule` (with auto-registration), and the whole-run aggregate
+mode is documented as **on by default** (the extra `aggregate.exec`, how to rename via `aggregateFile`,
+and how to turn it off via `aggregate=false`), and the async/thread-pool + mixed-mode limitations are
+stated.
 
 ## 10. Three-model review log (2026-06-16)
 
