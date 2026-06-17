@@ -49,6 +49,18 @@ public class PrepareAgentMojo extends AbstractMojo {
     @Parameter
     List<String> excludes;
 
+    /** Write the whole-run aggregate {@code .exec} at shutdown. Default true. */
+    @Parameter(property = "pjacoco.aggregate", defaultValue = "true")
+    boolean aggregate;
+
+    /** Aggregate file name (or absolute path). Unset → agent default {@code aggregate.exec}. */
+    @Parameter(property = "pjacoco.aggregateFile")
+    String aggregateFile;
+
+    /** Weave JUnit 4's {@code runLeaf} for zero-touch per-test activation. Default true. */
+    @Parameter(property = "pjacoco.junit4Auto", defaultValue = "true")
+    boolean junit4Auto;
+
     /** Skip wiring the agent. */
     @Parameter(property = "pjacoco.skip", defaultValue = "false")
     boolean skip;
@@ -86,6 +98,15 @@ public class PrepareAgentMojo extends AbstractMojo {
         }
         if (excludes != null && !excludes.isEmpty()) {
             opts.append(",excludes=").append(join(excludes));
+        }
+        if (!aggregate) {
+            opts.append(",aggregate=false");
+        }
+        if (aggregateFile != null && !aggregateFile.isEmpty()) {
+            opts.append(",aggregateFile=").append(aggregateFile);
+        }
+        if (!junit4Auto) {
+            opts.append(",junit4Auto=false");
         }
         return opts.toString();
     }
