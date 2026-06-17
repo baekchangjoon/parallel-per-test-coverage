@@ -15,6 +15,11 @@ import net.bytebuddy.asm.Advice;
  * internally, so the advice has no pass/fail signal (the {@code @Rule} path does and writes
  * passed/failed). {@code @Test(timeout)}/{@code @Rule Timeout} run the body on a NEW thread, so such
  * tests are silently empty under this path (documented limitation).
+ *
+ * <p>Cross-path limitation: if a test under this zero-touch path makes a SYNCHRONOUS in-process servlet
+ * call on the test thread, the servlet advice clears the per-thread coverage context on servlet exit, so
+ * the remainder of that test records nothing. Set {@code junit4Auto=false} for such suites, or keep the
+ * servlet (black-box) path in a separate task.
  */
 public final class RunLeafAdvice {
 
