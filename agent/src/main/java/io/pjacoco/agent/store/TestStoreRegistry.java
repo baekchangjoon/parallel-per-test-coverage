@@ -64,6 +64,16 @@ public final class TestStoreRegistry {
         return null;
     }
 
+    /** Non-removing, side-effect-free lookup (for the empty-store guard in CoverageControl). */
+    public TestStore peek(String testId) {
+        return stores.get(testId);
+    }
+
+    /** Remove a store WITHOUT flushing (empty-store guard: an activation that recorded nothing). */
+    public synchronized void discard(String testId) {
+        stores.remove(testId);
+    }
+
     public synchronized void stop(String testId, String result) {
         TestStore s = stores.remove(testId);
         if (s == null) {
