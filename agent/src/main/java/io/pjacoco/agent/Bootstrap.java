@@ -2,6 +2,7 @@ package io.pjacoco.agent;
 
 import io.pjacoco.agent.api.CoverageControl;
 import io.pjacoco.agent.control.ControlEndpoint;
+import io.pjacoco.agent.inbound.brave.BraveScopeInboundActivator;
 import io.pjacoco.agent.inbound.junit4.JUnit4InboundActivator;
 import io.pjacoco.agent.inbound.servlet.ServletInboundActivator;
 import io.pjacoco.agent.observability.AgentLog;
@@ -12,10 +13,15 @@ import io.pjacoco.agent.output.Json;
 import io.pjacoco.agent.probe.CoverageBridge;
 import io.pjacoco.agent.probe.ProbeInstrumentation;
 import io.pjacoco.agent.store.TestStoreRegistry;
+import io.pjacoco.agent.trace.BraveTestIdSource;
+import io.pjacoco.agent.trace.CoverageKeyResolver;
+import io.pjacoco.agent.trace.OtelTestIdSource;
+import io.pjacoco.agent.trace.TraceScopeBridge;
 import java.lang.instrument.Instrumentation;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import org.jacoco.core.runtime.RuntimeData;
 
 /** Java agent entry point: wires the registry, control endpoint, probe + inbound instrumentation. */
@@ -98,6 +104,17 @@ public final class Bootstrap {
 
         if (options.junit4Auto()) {
             new JUnit4InboundActivator().install(inst);
+        }
+
+        // Brave scope weave: woven advice drives TraceScopeBridge so async-handoff threads are attributed
+        // to the same test as the request thread (REQ-005, REQ-006). Gated on traceKeyAutoCreate so that
+        // the default (no-tracer) hot-path is completely unchanged when the feature is off.
+        if (options.traceKeyAutoCreate()) {
+            CoverageKeyResolver resolver = new CoverageKeyResolver(
+                    Arrays.<io.pjacoco.agent.trace.TestIdSource>asList(
+                            new OtelTestIdSource(), new BraveTestIdSource()));
+            TraceScopeBridge traceBridge = new TraceScopeBridge(registry, resolver);
+            new BraveScopeInboundActivator(traceBridge).install(inst);
         }
 
         log.info("agent installed (output=" + options.outputDir()

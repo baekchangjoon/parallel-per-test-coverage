@@ -76,6 +76,7 @@ dependencies {
     integrationTestImplementation("net.bytebuddy:byte-buddy-agent:1.14.18")
     integrationTestImplementation("org.eclipse.jetty:jetty-server:9.4.55.v20240627")
     integrationTestImplementation("org.eclipse.jetty:jetty-servlet:9.4.55.v20240627")
+    integrationTestImplementation("io.zipkin.brave:brave:5.16.0")
 }
 
 // TargetService/SampleServlet are kept at Java 8 bytecode so jacoco uses ClassFieldProbeArrayStrategy
