@@ -147,8 +147,11 @@ public final class TraceWeaveGateway {
     private static String extractTraceId(Object shadedContext) {
         try {
             ClassLoader cl = shadedContext.getClass().getClassLoader();
-            // When bootstrap-loaded the classloader is null; fall back to system CL which can
-            // see the OTel shaded types through the OTel agent's own CL delegation.
+            // shadedContext is loaded by the OTel AgentClassLoader, never null in practice.
+            // This null-CL branch is a defensive fallback only; the system CL does NOT delegate
+            // to the OTel AgentClassLoader, so the subsequent Class.forName calls would fail —
+            // but the surrounding try/catch returns null on any ClassNotFoundException, making
+            // this branch a safe no-op.
             if (cl == null) {
                 cl = ClassLoader.getSystemClassLoader();
             }
