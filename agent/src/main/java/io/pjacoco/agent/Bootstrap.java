@@ -35,7 +35,7 @@ public final class Bootstrap {
                 outDir, new ExecWriter(), metrics, log,
                 options.autoRegister(), options.maxStores(), new java.util.function.LongSupplier() {
                     public long getAsLong() { return System.currentTimeMillis(); }
-                });
+                }, options.traceKeyAutoCreate());
 
         // In-JVM activation API: the testkit reaches this reflectively; the JUnit 4 runLeaf advice calls it.
         CoverageControl.bindRegistry(registry);

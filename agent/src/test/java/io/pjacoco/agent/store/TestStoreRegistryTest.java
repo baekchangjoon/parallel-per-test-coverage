@@ -3,6 +3,7 @@ package io.pjacoco.agent.store;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.pjacoco.agent.observability.AgentLog;
@@ -21,6 +22,19 @@ class TestStoreRegistryTest {
                 lenient, 100, new java.util.function.LongSupplier() {
                     public long getAsLong() { return clock.get(); }
                 });
+    }
+
+    private TestStoreRegistry newRegistry(boolean autoRegister, boolean traceKeyAutoCreate) {
+        final AtomicLong clock = new AtomicLong(1000L);
+        try {
+            Path dir = Files.createTempDirectory("tsr-test");
+            return new TestStoreRegistry(dir, new ExecWriter(), new Metrics(), new AgentLog(),
+                    autoRegister, 100, new java.util.function.LongSupplier() {
+                        public long getAsLong() { return clock.get(); }
+                    }, traceKeyAutoCreate);
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Test
@@ -43,6 +57,20 @@ class TestStoreRegistryTest {
     void lenientModeAutoCreates(@TempDir Path dir) {
         TestStoreRegistry r = newRegistry(dir, true);
         assertNotNull(r.active("AUTO"));
+    }
+
+    @Test
+    void forCoverageKeyAutoCreatesWhenEnabled() {
+        TestStoreRegistry reg = newRegistry(/*autoRegister*/ false, /*traceKeyAutoCreate*/ true);
+        TestStore s = reg.forCoverageKey("4bf92f...");
+        assertNotNull(s);
+        assertSame(s, reg.peek("4bf92f..."));
+    }
+
+    @Test
+    void forCoverageKeyStrictReturnsNullWhenDisabled() {
+        TestStoreRegistry reg = newRegistry(false, false);
+        assertNull(reg.forCoverageKey("unknown"));
     }
 
     @Test
