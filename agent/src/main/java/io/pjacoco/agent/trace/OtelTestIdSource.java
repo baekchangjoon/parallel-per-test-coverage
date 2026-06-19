@@ -15,22 +15,38 @@ public class OtelTestIdSource implements TestIdSource {
 
     /** reflective seam: Span.current().getSpanContext().isValid() */
     protected boolean valid() throws Exception {
-        Object sc = spanContext();
-        Method isValid = sc.getClass().getMethod("isValid");
-        return Boolean.TRUE.equals(isValid.invoke(sc));
+        Object[] pair = spanContext();
+        Class<?> scIf = (Class<?>) pair[0];
+        Object sc     = pair[1];
+        return Boolean.TRUE.equals(scIf.getMethod("isValid").invoke(sc));
     }
 
     /** reflective seam: SpanContext.getTraceId() */
     protected String traceId() throws Exception {
-        Object sc = spanContext();
-        Method getTraceId = sc.getClass().getMethod("getTraceId");
-        return (String) getTraceId.invoke(sc);
+        Object[] pair = spanContext();
+        Class<?> scIf = (Class<?>) pair[0];
+        Object sc     = pair[1];
+        return (String) scIf.getMethod("getTraceId").invoke(sc);
     }
 
-    private Object spanContext() throws Exception {
+    /**
+     * Returns [SpanContext interface Class, SpanContext instance].
+     *
+     * Methods are resolved from the PUBLIC API interfaces
+     * (io.opentelemetry.api.trace.Span / SpanContext) rather than from the
+     * concrete instance class (e.g. SdkSpan, ImmutableSpanContext, PropagatedSpan).
+     * OTel's concrete implementations are non-public classes; invoking a method
+     * resolved via getClass() on a non-public class from our io.pjacoco package
+     * raises IllegalAccessException at invoke() time. A Method obtained from a
+     * public interface is accessible regardless of the instance's concrete-class
+     * visibility. (See GA-3 spike, ga-spike-results.md §GA-3.)
+     */
+    private Object[] spanContext() throws Exception {
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        Class<?> span = Class.forName("io.opentelemetry.api.trace.Span", false, cl);
-        Object current = span.getMethod("current").invoke(null);
-        return current.getClass().getMethod("getSpanContext").invoke(current);
+        Class<?> spanIf = Class.forName("io.opentelemetry.api.trace.Span",        false, cl);
+        Class<?> scIf   = Class.forName("io.opentelemetry.api.trace.SpanContext",  false, cl);
+        Object current  = spanIf.getMethod("current").invoke(null);
+        Object sc       = spanIf.getMethod("getSpanContext").invoke(current);
+        return new Object[]{scIf, sc};
     }
 }
