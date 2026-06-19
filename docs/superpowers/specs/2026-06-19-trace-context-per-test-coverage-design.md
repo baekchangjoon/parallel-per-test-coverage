@@ -86,7 +86,7 @@ pjacoco는 SUT에 붙은 JaCoCo probe 버퍼를 **testId별로 분할**해 per-t
    - resolve 우선순위: 살아있는 트레이서의 valid traceId가 있으면 그것, 없으면 local. classloader 경계는 §3-2/GA-3.
 
 2. **`TraceScopeBridge` (백엔드당 1개)** — async 전파의 핵심. 트레이서가 어느 스레드든 trace context를 current로 만들 때 `CoverageContext`를 동기화한다. **주입 메커니즘은 트레이서별로 다르며, 명명한 후보는 GA-1로 검증·확정한다:**
-   - **OTel** — `ContextStorage.addWrapper`는 **공개·안정 API가 아니고** 최초 `ContextStorage.get()` 이전에만 등록 가능하다(이미 기동한 SUT에선 `IllegalStateException`). 따라서 1순위는 **`ContextStorageProvider` SPI를 OTel javaagent extension으로 제공**(예: `-Dotel.javaagent.extensions=pjacoco-otel-ext.jar`)하는 배포 모델. 이는 §3의 "런타임 reflective 주입"과 다른 배포 형태이므로 GA-1에서 명시·검증한다. 폴백은 OTel scope 진입/탈출 메서드의 ByteBuddy weave.
+   - **OTel** — ⚠️ **GA-1 spike(Task 1) 결과로 확정:** `ContextStorageProvider` SPI extension은 **FAIL**(OTel javaagent의 `AgentContextStorage`가 `APPLICATION_CONTEXT` 키로 동작하며 래핑된 storage의 `attach()`로 위임하지 않아 attach/detach 관측 불가; extension은 또한 `ExtensionClassLoader`에 로드돼 app CL에 안 보임). `ContextStorage.addWrapper`도 비공개·최초 `get()` 전 한정이라 불가. **채택 메커니즘 = OTel agent의 shaded `io.opentelemetry...ThreadLocalContextStorage.attach()`(OTel `AgentClassLoader` 거주)를 ByteBuddy weave**(PASS한 Brave scope-weave의 OTel 등가물). trace context 전파 자체는 spike에서 입증됨(request+executor 스레드 동일 traceId). 단 이 weave는 `AgentClassLoader` 거주 shaded 클래스의 match+retransform과 OTel-premain↔pjacoco 순서가 가능해야 성립 → **GA-3에서 green weave로 확정**(미검증 상태).
    - **Brave** — `ScopeDecorator`는 `CurrentTraceContext.Builder.addScopeDecorator()`로 **build 시점에만** 등록되고 build 후 인스턴스는 불변이라 사후 reflective 주입은 깨지기 쉽다. 후보 우선순위: (a) Spring `CurrentTraceContextCustomizer` 빈(단, Spring 통합 필요 — pure-agent 제약과 상충), (b) Sleuth가 만든 `CurrentTraceContext`의 scope 진입/탈출 메서드를 **ByteBuddy weave**(주 대안), (c) 빈 교체. spike가 (b)를 우선 시도.
    - 동작: scope enter → traceId resolve → `CoverageContext.set(<coverage key의 store>)`; scope exit → **이전 값 복원**. **복원 상태는 ThreadLocal 스택이 아니라 enter가 반환하는 scope 객체의 필드에 보관**(Brave `ThreadLocalCurrentTraceContext`의 revert 방식과 동일)하여, scope가 연 스레드와 닫는 스레드가 다를 때(예: CompletableFuture 체인) 닫는 스레드의 컨텍스트를 오염시키지 않는다.
    - 트레이서가 전파하는 모든 스레드(executor/`@Async`/Kafka consumer)에 커버리지가 자동으로 따라온다. **C3를 가능케 하는 조각.**
@@ -222,9 +222,9 @@ pjacoco는 SUT에 붙은 JaCoCo probe 버퍼를 **testId별로 분할**해 per-t
 
 설계가 참으로 가정하지만 코드로 아직 입증되지 않은 전제. 각 항목은 해당 phase 착수 전 spike로 검증하며, 거짓일 경우 §7 degradation 사다리로 폴백한다.
 
-- **GA-1 (C1 게이트): scope 훅 주입 가능성.** 각 백엔드에서 우선순위 후보를 spike로 확정한다.
-  - **OTel:** `ContextStorageProvider` SPI를 javaagent extension으로 등록하는 경로가 동작하고(주의: `ContextStorage.addWrapper`는 비공개·최초 `get()` 이전 한정이라 1순위 아님), extension이 활성 SUT에서 trace context current 전환을 관측할 수 있다.
-  - **Brave:** Sleuth가 build한 불변 `CurrentTraceContext`의 scope 진입/탈출을 **ByteBuddy weave**(또는 `CurrentTraceContextCustomizer`)로 후킹할 수 있다. (build 후 `addScopeDecorator` 불가가 핵심 제약.)
+- **GA-1 (C1 게이트): scope 훅 주입 가능성.** spike로 확정 — 결과 반영:
+  - **Brave: ✅ PASS (Task 2).** 불변 `ThreadLocalCurrentTraceContext`의 `newScope/maybeScope` + `Scope.close()` ByteBuddy weave로 sync+@Async 동일 traceId enter/exit 관측. 채택.
+  - **OTel: ⚠️ 부분 (Task 1).** `ContextStorageProvider` SPI extension **FAIL**(`AgentContextStorage`가 래핑 storage로 위임 안 함; extension은 `ExtensionClassLoader`라 app에 안 보임). 채택 메커니즘 = shaded `ThreadLocalContextStorage.attach()` ByteBuddy weave. trace 전파는 입증, **weave 자체(AgentClassLoader retransform+순서)는 GA-3에서 green 확인 필요(미검증).**
   - 거짓이면: scope 브리지 불가 → §7 surface별 choke-point read 폴백(Kafka/@Async 미커버).
 - **GA-2 (C3-OTel 전제):** OTel javaagent가 `tainted-spring`의 Kafka 홉에서 trace context를 자동 전파한다(HTTP뿐 아니라 Kafka record header 주입/추출).
   - 참고 반례: Eventuate Tram(Brave)은 자동 전파가 안 돼 전용 `eventuate-tram-spring-cloud-sleuth-tram-starter`가 필요했다(legacy-tram R1에서 확인). "자동 전파"를 당연시하지 않는다.
