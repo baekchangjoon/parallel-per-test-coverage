@@ -18,6 +18,7 @@ public final class TestStoreRegistry {
     private final boolean lenient;
     private final int maxStores;
     private final LongSupplier clock;
+    private final boolean traceKeyAutoCreate;
     private volatile String commitSha;
 
     private final ConcurrentHashMap<String, TestStore> stores = new ConcurrentHashMap<String, TestStore>();
@@ -25,6 +26,12 @@ public final class TestStoreRegistry {
 
     public TestStoreRegistry(Path outputDir, ExecWriter writer, Metrics metrics, AgentLog log,
                              boolean lenient, int maxStores, LongSupplier clock) {
+        this(outputDir, writer, metrics, log, lenient, maxStores, clock, false);
+    }
+
+    public TestStoreRegistry(Path outputDir, ExecWriter writer, Metrics metrics, AgentLog log,
+                             boolean lenient, int maxStores, LongSupplier clock,
+                             boolean traceKeyAutoCreate) {
         this.outputDir = outputDir;
         this.writer = writer;
         this.metrics = metrics;
@@ -32,6 +39,7 @@ public final class TestStoreRegistry {
         this.lenient = lenient;
         this.maxStores = maxStores;
         this.clock = clock;
+        this.traceKeyAutoCreate = traceKeyAutoCreate;
     }
 
     public synchronized void start(String testId, String shardId, String commitSha) {
@@ -67,6 +75,21 @@ public final class TestStoreRegistry {
     /** Non-removing, side-effect-free lookup (for the empty-store guard in CoverageControl). */
     public TestStore peek(String testId) {
         return stores.get(testId);
+    }
+
+    /**
+     * Tracer-mode lookup: if {@code traceKeyAutoCreate} is enabled and the key is not yet registered,
+     * lazily creates and registers a store (via {@link #start}) then returns it. If the flag is off,
+     * delegates to {@link #active} (existing strict/lenient behavior, may return null).
+     */
+    public synchronized TestStore forCoverageKey(String key) {
+        if (traceKeyAutoCreate) {
+            if (!stores.containsKey(key)) {
+                start(key, null, null);
+            }
+            return peek(key);
+        }
+        return active(key);
     }
 
     /** Remove a store WITHOUT flushing (empty-store guard: an activation that recorded nothing). */

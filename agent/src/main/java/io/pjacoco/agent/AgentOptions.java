@@ -47,6 +47,8 @@ public final class AgentOptions {
     public String aggregateFile() { return get("aggregateFile", "aggregate.exec"); }
     /** Whether to weave JUnit 4's {@code ParentRunner.runLeaf} for zero-touch activation. Default true. */
     public boolean junit4Auto() { return Boolean.parseBoolean(get("junit4Auto", "true")); }
+    /** Auto-create a store for an unregistered coverage key in tracer mode. Default false (strict). */
+    public boolean traceKeyAutoCreate() { return Boolean.parseBoolean(get("traceKeyAutoCreate", "false")); }
 
     // passed through to jacoco-core instrumentation
     public String includes()    { return get("includes", "*"); }
