@@ -113,4 +113,104 @@ so the choke-point fallback is not needed on the Brave path.
 
 ## GA-3 — (pending, Task 3)
 
-## GA-1 (OTel) — (pending, Task 1)
+## GA-1 (OpenTelemetry) — **FAIL (primary candidate) → adopt shaded-ContextStorage weave**
+
+**Date:** 2026-06-19
+**Spike target:** minimal standalone Spring Boot 2.7.18 app (Java 8) with `opentelemetry-api:1.45.0`
+on its classpath and a `/spike/async` endpoint that hands off to a plain `java.util.concurrent`
+`ExecutorService`. OTel javaagent: `opentelemetry-javaagent.jar` **v2.11.0** (Java 8-capable),
+`-Dotel.*.exporter=none`. (No tainted service / Docker needed — the question is pure OTel mechanics.)
+
+### Central question
+
+With the OTel javaagent attached, can an `io.opentelemetry.context.ContextStorageProvider` extension's
+`ContextStorage` wrapper observe attach()/detach() (context becoming current) on the request thread
+AND an executor/@Async handoff thread, reading `Span.fromContext(ctx).getSpanContext().getTraceId()` —
+so pjacoco can bind a coverage key = traceId? Loaded via `-Dotel.javaagent.extensions=<jar>` /
+`OTEL_JAVAAGENT_EXTENSIONS`.
+
+### Verdict: FAIL for the `ContextStorageProvider` extension SPI. Trace context DOES propagate (same traceId sync+async), but the SPI extension is the wrong observation point.
+
+The PRIMARY candidate cannot work, for two independently-proven reasons:
+
+1. **Loaded as a true extension, the provider is invisible to the app-side SPI.** The OTel
+   `ExtensionClassLoader` is a child of the agent classloader and is NOT on the application
+   classloader's parent chain. The application-side `io.opentelemetry.context.LazyStorage.get()` runs
+   `ServiceLoader.load(ContextStorageProvider.class)` with the **application** TCCL and never finds the
+   extension's provider, so `SpikeContextStorageProvider.get()` is never called. (`-Dotel.javaagent.extensions=`
+   and `OTEL_JAVAAGENT_EXTENSIONS=` both DO load the jar — agent logs `Installed 1 extension(s)` — but
+   loading ≠ SPI discovery.)
+
+2. **Even forced onto the app classloader, attach/detach are never observed.** When the ext jar is
+   injected into the Boot fat jar's `BOOT-INF/lib` (stored/uncompressed), the app-TCCL ServiceLoader
+   finds the provider and `get()` runs — but the agent's `ContextStorageWrappersInstrumentation`
+   **prepends `AgentContextStorage.wrap()`** to the wrapper chain, so the live `ContextStorage.get()`
+   returns `AgentContextStorage`. `AgentContextStorage.attach()/current()` store the application context
+   inside the agent's **shaded** context (`APPLICATION_CONTEXT` `ContextKey`) and attach via the shaded
+   machinery; they do **not** delegate to the wrapped storage (which is consulted only for `root()` in
+   the constructor). The wrapped `DelegatingContextStorage.attach()` is therefore **never invoked**.
+
+### Evidence (verbatim)
+
+```
+[otel.javaagent ...] DEBUG ...AgentInstaller - Installed 1 extension(s)
+Class.forName(SpikeProvider) FAILED: java.lang.ClassNotFoundException: io.pjacoco.spike.otel.SpikeContextStorageProvider   # extension-only: invisible to app CL
+```
+```
+[OTEL-SPIKE] SpikeContextStorageProvider.get() called -> installing DelegatingContextStorage (classloader=...LaunchedURLClassLoader@628b819d)
+[OTEL-SPIKE] DelegatingContextStorage constructed, delegate=io.opentelemetry.context.ThreadLocalContextStorage
+ContextStorage.get()=io.opentelemetry.javaagent.instrumentation.opentelemetryapi.context.AgentContextStorage ...   # AgentContextStorage dominates; NO [OTEL-SPIKE attach/detach] lines fire for any request
+```
+Trace context propagation itself works — injected `traceparent: 00-1111…1111-2222…2222-01`:
+```
+[SPIKE-REQ]  request thread=http-nio-8080-exec-2 span.tid=11111111111111111111111111111111
+[SPIKE-WORK] async thread=pool-1-thread-1       span.tid=11111111111111111111111111111111   # same traceId across the executor handoff
+```
+Bytecode confirmation (decompiled from the agent jar): `LazyStorage.get()` applies
+`ContextStorageWrappers.getWrappers()`; `ContextStorageWrappersInstrumentation$AddWrapperAdvice`
+inserts `AgentContextStorage.wrap()` at index 0; `AgentContextStorage.attach()` operates on the shaded
+`Context`/`APPLICATION_CONTEXT` and never calls the wrapped delegate's `attach`.
+
+### Classloader findings
+
+- Extension provider class loads into `ExtensionClassLoader`, **not reachable** from the app
+  `org.springframework.boot.loader.LaunchedURLClassLoader` (ClassNotFoundException from app code).
+- The real propagation path is the agent's **shaded** API
+  (`io.opentelemetry.javaagent.shaded.io.opentelemetry.context.*`), resident in the OTel
+  `AgentClassLoader` — not the app or bootstrap CL. The production observation hook and pjacoco's
+  shared `CoverageContext` state must live where they can reach that (keep the bridge state on the
+  **bootstrap/system CL**, reached reflectively from woven advice — same posture as the Brave spike).
+
+### Recommended mechanism for REQ-005 / REQ-006 (T10 OTel path)
+
+**Adopt: ByteBuddy weave of the agent's SHADED `ContextStorage` — the OTel analogue of the (PASSED)
+Brave scope-weave.**
+- ENTER: body-only advice on
+  `io.opentelemetry.javaagent.shaded.io.opentelemetry.context.ThreadLocalContextStorage#attach(Context)`;
+  read the trace id reflectively from the shaded `Context` arg
+  (`Span.fromContext(ctx).getSpanContext().getTraceId()`), agent has no OTel compile dep (`Object` arg +
+  reflection, like `BraveScopeBridge`).
+- EXIT: body-only advice on `close()` of the returned shaded `Scope` impl
+  (`ThreadLocalContextStorage$ScopeImpl`), paired to ENTER by scope-instance identity.
+- This is on the real per-thread propagation path the agent uses (request + executor/@Async re-attach),
+  so it observes the same traceId on every thread (Evidence above confirms the context is current on the
+  handoff thread). Use `RedefinitionStrategy.RETRANSFORMATION` + `disableClassFormatChanges` to weave the
+  already-loaded shaded classes (OTel `premain` loads them before pjacoco).
+
+**Rejected:** `ContextStorageProvider` extension SPI (this spike — FAIL); `ContextStorage.addWrapper`
+(not public/stable, pre-`get()`-only, and bypassed by `AgentContextStorage` anyway); requiring the app
+to ship its own provider (not zero-touch and still does not observe attach/detach).
+
+**Carry to GA-3 / T3:** confirm pjacoco can match + retransform shaded classes resident in the OTel
+`AgentClassLoader`, and that OTel-premain-then-pjacoco agent ordering still permits retransformation.
+
+### Reproduction
+
+- Extension: `spike/otel-ext/` (`SpikeContextStorageProvider`, `DelegatingContextStorage`,
+  `META-INF/services/io.opentelemetry.context.ContextStorageProvider`; OTel API `compileOnly`).
+  Build: `cd spike && ../gradlew :otel-ext:jar` → `spike/otel-ext/build/libs/otel-context-spike-ext.jar`.
+- Target app + OTel agent v2.11.0 were scratch (`/tmp/otel-spike`, discarded). Run:
+  `java -javaagent:opentelemetry-javaagent.jar -Dotel.javaagent.extensions=otel-context-spike-ext.jar
+   -Dotel.traces.exporter=none -Dotel.metrics.exporter=none -Dotel.logs.exporter=none -jar app.jar`;
+  exercise `curl -H 'traceparent: 00-1111…1111-2222…2222-01' http://localhost:8080/spike/async`.
+- Full investigation: `sdd/task-1-report.md`.
