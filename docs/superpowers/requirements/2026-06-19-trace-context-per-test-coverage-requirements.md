@@ -224,16 +224,16 @@
 
 | REQ-ID | 요구사항 | 수용 테스트 | Level | Status |
 |--------|----------|-------------|-------|--------|
-| REQ-001 | 핫패스 무변경 | `HotPathInvariantTest#recordCoverageDoesNotCallTracer` | unit | 🔴 planned |
-| REQ-002 | optional·런타임 하드의존0·Java8 | `NoTracerAttachIT` + build bytecode guard | integration | 🔴 planned |
-| REQ-003 | best-effort no-throw | `TraceConsumeFailureIT#appUnaffectedOnRuntimeError` | integration | 🔴 planned |
-| REQ-004 | OTel in-process 소비 | `OtelSingleServiceE2E#syncRequestAttributed` | E2E | 🔴 planned |
-| REQ-005 | Brave in-process 소비 | `BraveSingleServiceE2E#syncRequestAttributed` | E2E | 🔴 planned |
-| REQ-006 | async 핸드오프 귀속 | `AsyncHandoffCoverageE2E#asyncWorkAttributedToTest` | E2E | 🔴 planned |
-| REQ-007 | 트레이서 부재 무회귀 | 기존 스위트 + `TracerAbsentFallbackIT` | E2E/integration | 🔴 planned |
-| REQ-008 | 모드 우선순위(통합 resolver) | `ModePrecedenceIT#{servlet,runLeaf}DoesNotOverwriteTrace` | integration | 🔴 planned |
-| REQ-009 | cross-thread scope close | `TraceScopeBridgeTest#closeOnOtherThreadNoCorruption` | unit | 🔴 planned |
-| REQ-010 | valid trace만, invalid 폴백(백엔드별) | `TestIdSourceTest#{otelInvalid,braveNull}FallsBackToLocal` | unit | 🔴 planned |
+| REQ-001 | 핫패스 무변경 | `HotPathInvariantTest#recordCoverageReadsThreadLocalOnceAndRecordsOnce` | unit | 🟢 green |
+| REQ-002 | optional·런타임 하드의존0·Java8 | `ShadedJarNoTracerDepTest#{shadedJarContainsNoBraveClasses, shadedJarContainsNoOpenTelemetryClasses, agentClassBytecodeTargetsJava8}` + `NoTracerAttachIT#{otelSourceReturnsNullWhenOtelAbsent, braveSourceReturnsNullWhenNoCurrentTracing, resolverReturnsNullWhenNoTracerContextActive}` | unit + integration | 🟢 green |
+| REQ-003 | best-effort no-throw | `TraceConsumeFailureIT#{throwingTracerSourceDoesNotBreakServletActivation, nullStoreScopeHookIsHandledGracefully, installFailureIncrementsObservableMetric}` | integration | 🟢 green |
+| REQ-004 | OTel in-process 소비 | `OtelWeaveE2E#otelWeave_requestAndAsyncThreadsCoveredUnderSameTrace` (RequestHandler attribution — REQ-004 assertion). 실제 OTel javaagent(v2.11.0) 사용, forked JVM에서 검증 | E2E | 🟢 green |
+| REQ-005 | Brave in-process 소비 | `BraveScopeWeaveIT#braveScope_sync_and_async_drivesCoverageContext` (sync assertion). 추가 증거: legacy-tram out-of-process, weave-driven | integration | 🟢 green |
+| REQ-006 | async 핸드오프 귀속 | `BraveScopeWeaveIT#braveScope_sync_and_async_drivesCoverageContext` (async worker assertion) + `OtelWeaveE2E#otelWeave_requestAndAsyncThreadsCoveredUnderSameTrace` (AsyncWorker async assertion). 비고: cross-JVM Kafka-consumer async은 C3 범위(OTel-weave-kafka-consumer-gap 결정 문서 참조), REQ-006은 단일 서비스 내 async에 한정 | integration + E2E | 🟢 green |
+| REQ-007 | 트레이서 부재 무회귀 | `NoTracerAttachIT#{otelSourceReturnsNullWhenOtelAbsent, braveSourceReturnsNullWhenNoCurrentTracing, resolverReturnsNullWhenNoTracerContextActive}` + `TracerAbsentFallbackIT#{noTracerBaggageFallbackBindsStoreAndIncrementsCounter, noBaggageNoTracerDoesNotBindAndDoesNotIncrement}` | integration | 🟢 green |
+| REQ-008 | 모드 우선순위(통합 resolver) | `CoverageKeyResolverTest#{resolvePrefersFirstNonNull, resolveNullWhenAllEmpty, throwingSourceIsSkipped}` + `ServletAdviceTest#{activatesResolvedStoreFromBaggage, strictUnregisteredLeavesContextUnset, noHeaderOrNonHttpIgnored}`. 참조: `docs/superpowers/decisions/2026-06-19-deactivate-clear-semantics.md` | unit | 🟢 green |
+| REQ-009 | cross-thread scope close | `TraceScopeBridgeTest#closeOnOtherThreadDoesNotCorrupt` | unit | 🟢 green |
+| REQ-010 | valid trace만, invalid 폴백(백엔드별) | `OtelTestIdSourceTest#{invalidSpanFallsBackToNull, validSpanReturnsTraceId, throwingSeamFallsBackToNull}` + `BraveTestIdSourceTest#{nullContextFallsBack, validContextReturnsTraceId, emptyStringFallsBack, throwingSeamFallsBack}` | unit | 🟢 green |
 | REQ-011 | 매핑 등록 endpoint(bounded) | `TraceMapEndpointIT#{registeredShown,boundedEviction}` | integration | 🔴 planned |
 | REQ-012 | 미등록 raw traceId | `UnmappedTraceE2E#rawTraceIdAsTestId` | E2E | 🔴 planned |
 | REQ-013 | N:1 병합 | `TraceMergeTest#multipleTraceIdsOneTestId` | integration | 🔴 planned |
@@ -242,13 +242,19 @@
 | REQ-016 | flush 생명주기(idle reaper) | `TraceStoreLifecycleIT#idleReaperFlushWithoutJvmExit` | integration/E2E | 🔴 planned |
 | REQ-017 | late-write grace | `LateWriteGraceIT#lateWriteNotLost` | integration | 🔴 planned |
 | REQ-018 | in-flight eviction 방지 | `TraceEvictionIT#idleEvictedBeforeInFlight` | integration | 🔴 planned |
-| REQ-019 | 관측성 카운터 | `MetricsTest#traceCountersIncrement` | unit/integration | 🔴 planned |
-| REQ-022 | 트레이서 모드 store 자동생성 | `TracerModeAutoCreateIT#noSilentDrop` | integration | 🔴 planned |
+| REQ-019 | 관측성 카운터 | `MetricsTest#{scopeHookInjectionFailuresStartsAtZero, fallbackActivationsStartsAtZero, summaryIncludesNewCounters, installFailureIncrementsCounterAndDoesNotPropagate}`. C1 부분: scopeHookInjectionFailures+fallbackActivations 완료; 나머지 카운터(unmappedTraceIds, evictedInFlightTraces)는 C3 | unit/integration | 🟡 partial |
+| REQ-022 | 트레이서 모드 store 자동생성 | `TestStoreRegistryTest#{forCoverageKeyAutoCreatesWhenEnabled, forCoverageKeyStrictReturnsNullWhenDisabled}` | unit | 🟢 green |
 | REQ-023 | C3 수집 + drain 대기 | `DistributedCollectIT#downstreamCollectedAfterDrain` | E2E | 🔴 planned |
-| REQ-024 | scope-fail 동기 폴백 | `ChokePointFallbackIT#syncCoverageOnHookFailure` | integration | 🔴 planned |
+| REQ-024 | scope-fail 동기 폴백 | GA-1 PASS → scope weave가 주 경로; choke-point 폴백 미발동, C3에서 분산 안전망으로 재평가. | integration | 🔵 deferred |
 | REQ-020 | [Won't] messaging activator | — | — | 🔵 out-of-scope |
 | REQ-021 | [Won't] 운영 per-request | — | — | 🔵 out-of-scope |
 
-Coverage: 0/22 green (0%) — target 100% (대상: Must 16 + 미연기 Should 6). 제외: Won't 2 (🔵 REQ-020, REQ-021). GA-1/2/3는 phase 게이트 spike(plan에서 추적), REQ 행 아님.
+**C1 완료 상태 (DoD):**
+- C1 Must REQ-001~010, REQ-022: **12/12 🟢** (분모 12, 분자 12)
+- REQ-019 (미연기 Should): **🟡 partial** — C1 범위(scopeHookInjectionFailures + fallbackActivations) 완료; unmappedTraceIds·evictedInFlightTraces는 C3
+- REQ-024 (Should): **🔵 deferred** — GA-1 PASS로 choke-point 폴백 경로 불필요, C3 재평가 → 분모 제외
+- **C1 Must 커버리지: 12/12 (100%)**
 
-(Must: 001,002,003,004,005,006,007,008,009,010,011,012,015,016,022,023 = 16. Should: 013,014,017,018,019,024 = 6.)
+Coverage(전체): C1 Must 12/12 🟢; C1 Should REQ-019 🟡 partial; C2/C3 REQ 🔴 planned. 제외: Won't 2 (🔵 REQ-020, REQ-021), deferred 1 (🔵 REQ-024).
+
+(Must: 001,002,003,004,005,006,007,008,009,010,011,012,015,016,022,023 = 16. Should: 013,014,017,018,019,024 = 6. C1 Must 대상: 001,002,003,004,005,006,007,008,009,010,022 = 11 + REQ-022 = 12.)
