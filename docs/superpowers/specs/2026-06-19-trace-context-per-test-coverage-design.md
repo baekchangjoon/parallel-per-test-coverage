@@ -1,7 +1,7 @@
 # Trace Context 소비 기반 per-test 커버리지 (in-process async + 분산)
 
 - **작성일:** 2026-06-19
-- **상태:** Draft (brainstorming 승인 완료, 3-model 리뷰 대기)
+- **상태:** Approved (brainstorming 승인 + 3-vendor design 리뷰 반영 + 사용자 승인 완료) — 다음: 요구사항명세
 - **대상 레포:** `parallel-per-test-coverage` (`agent` 모듈 중심)
 - **관련 환경:** `~/github_tainted-spring`(OTel·8서비스·Kafka), `~/github_graph-rag-test-generator/graph-rag/samples/legacy-tram`(Brave/Sleuth·Eventuate Tram·B3)
 
