@@ -9,7 +9,8 @@ java {
 }
 
 // Compile to Java 8 bytecode so jacoco uses ClassFieldProbeArrayStrategy (className/classId
-// fields) rather than the condy strategy used for Java 11+ class files.
+// fields) rather than the condy strategy used for Java 11+ class files. Also keeps the Brave
+// scope-hook agent loadable on the legacy-tram Java 8 services.
 tasks.withType<JavaCompile> { options.release.set(8) }
 
 dependencies {
@@ -29,5 +30,28 @@ tasks.test {
         showStandardStreams = true
         events("passed", "failed", "skipped")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
+// ── GA-1 Brave scope-hook spike agent (fat jar) ──────────────────────────────────────────────
+// Packages BraveScopeHookAgent + advice + bridge + byte-buddy (unshaded; fine for the spike: the
+// legacy-tram services do not ship byte-buddy at runtime). Manifest declares premain/agentmain and
+// the retransform capability. No brave on the agent classpath — brave is reached reflectively/woven.
+val braveSpikeAgent by tasks.registering(Jar::class) {
+    archiveFileName.set("brave-scope-spike-agent.jar")
+    from(sourceSets.main.get().output)
+    // bundle byte-buddy classes (the target JVM has no byte-buddy on its classpath)
+    from(configurations.runtimeClasspath.get()
+        .filter { it.name.startsWith("byte-buddy") }
+        .map { zipTree(it) }) {
+        exclude("META-INF/**")
+    }
+    manifest {
+        attributes(
+            "Premain-Class" to "io.pjacoco.spike.BraveScopeHookAgent",
+            "Agent-Class" to "io.pjacoco.spike.BraveScopeHookAgent",
+            "Can-Retransform-Classes" to "true",
+            "Can-Redefine-Classes" to "true"
+        )
     }
 }
