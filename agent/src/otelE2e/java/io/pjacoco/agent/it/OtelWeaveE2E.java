@@ -24,6 +24,7 @@ import org.jacoco.core.data.ExecutionDataStore;
 import org.jacoco.core.data.SessionInfoStore;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Forked-JVM OTel smoke E2E (REQ-004, REQ-006).
@@ -50,17 +51,42 @@ class OtelWeaveE2E {
 
     @Test
     void otelWeave_requestAndAsyncThreadsCoveredUnderSameTrace() throws Exception {
+        String otelJar = requireOtelAgent();
+        runWeaveScenarioAndAssert(otelJar, Paths.get("build/coverage-otel-e2e"), 6313);
+    }
+
+    /**
+     * Regression for the C3 trace-context gap: real deployments mount the OTel javaagent under a
+     * non-conventional filename (e.g. {@code -javaagent:/opt/otel/otel.jar}). The agent must still
+     * discover it (structurally, by the shaded storage class — not by the
+     * {@code "opentelemetry-javaagent"} filename substring) and weave the scope hook; otherwise
+     * Kafka-consumer / async threads with no servlet choke-point get zero coverage. See
+     * {@code docs/superpowers/decisions/2026-06-20-otel-weave-kafka-consumer-gap.md}.
+     */
+    @Test
+    void otelWeave_firesWhenOtelAgentMountedWithNonConventionalFilename(@TempDir Path tmp)
+            throws Exception {
+        String otelJar = requireOtelAgent();
+        Path renamed = tmp.resolve("otel.jar");
+        Files.copy(new File(otelJar).toPath(), renamed);
+        runWeaveScenarioAndAssert(renamed.toAbsolutePath().toString(),
+                Paths.get("build/coverage-otel-e2e-renamed"), 6314);
+    }
+
+    private static String requireOtelAgent() {
         String otelJar = System.getProperty("pjacoco.otelAgent");
         assumeTrue(otelJar != null && !otelJar.isEmpty(),
                 "pjacoco.otelAgent not set — skipping OTel E2E (normal without the OTel jar)");
         assertTrue(new File(otelJar).isFile(), "OTel agent jar not found: " + otelJar);
+        return otelJar;
+    }
 
+    private void runWeaveScenarioAndAssert(String otelJar, Path outDir, int controlPort)
+            throws Exception {
         String shadedJar = System.getProperty("pjacoco.shadedJar");
         assertNotNull(shadedJar, "pjacoco.shadedJar system property must be set");
         assertTrue(new File(shadedJar).isFile(), "pjacoco shaded jar not found: " + shadedJar);
 
-        // Output dir for per-trace .exec files.
-        Path outDir = Paths.get("build/coverage-otel-e2e");
         Files.createDirectories(outDir);
 
         // Clean up any stale exec from a previous run.
@@ -89,12 +115,12 @@ class OtelWeaveE2E {
         cmd.add("-Dotel.logs.exporter=none");
         cmd.add("-Dotel.java.global-autoconfigure.enabled=true");
         // pjacoco agent: traceKeyAutoCreate enables the OTel weave.
-        // port=6313: distinct from e2eTest's default control port (6310) to avoid BindException
-        // when Gradle runs tests in parallel.
+        // controlPort is distinct from e2eTest's default control port (6310) and unique per
+        // scenario to avoid BindException when Gradle runs tests in parallel.
         cmd.add("-javaagent:" + shadedJar
                 + "=destfile=" + outDir.toAbsolutePath()
                 + ",traceKeyAutoCreate=true"
-                + ",port=6313"
+                + ",port=" + controlPort
                 + ",includes=com.example.otelsut.*");
         cmd.add("-cp");
         cmd.add(cp);
@@ -105,44 +131,34 @@ class OtelWeaveE2E {
 
         Process proc = pb.start();
 
-        // Capture stdout (contains TRACE_ID=...) and stderr.
-        StringBuilder stdout = new StringBuilder();
-        StringBuilder stderr = new StringBuilder();
+        // Capture stdout (contains TRACE_ID=...) and stderr. StringBuffer (not StringBuilder): the
+        // drain thread appends concurrently while the main thread polls toString() in awaitTraceId,
+        // so the sink MUST be thread-safe.
+        StringBuffer stdout = new StringBuffer();
+        StringBuffer stderr = new StringBuffer();
 
         Thread outThread = drainStream(proc.getInputStream(), stdout);
         Thread errThread = drainStream(proc.getErrorStream(), stderr);
 
-        boolean exited = proc.waitFor(60, TimeUnit.SECONDS);
-        if (!exited) {
-            // The SUT JVM may be kept alive by the pjacoco control endpoint's HTTP server
-            // (HttpServer.setExecutor(null) uses non-daemon threads).  When TRACE_ID has already
-            // been printed the SUT's work is done — destroy the lingering process and continue.
-            // If the SUT has NOT printed TRACE_ID yet (genuinely hung), we still destroy and let
-            // the assertNotNull(traceId) below fail with a clear message.
-            proc.destroyForcibly();
-        }
+        // The SUT's pjacoco control endpoint runs on a non-daemon thread, so the JVM never exits on
+        // its own. The per-trace store is flushed only on control-endpoint stop or a graceful
+        // shutdown — a forced kill (SIGKILL) would lose the unflushed store. So: wait until the SUT
+        // prints TRACE_ID (= span ended, work recorded), flush its store via the control endpoint,
+        // THEN kill the lingering JVM. (Mirrors how the tainted-spring cross-JVM reproduction flushes
+        // the mindgraph consumer store.)
+        String traceId = awaitTraceId(stdout, 30000);
+        assertNotNull(traceId, "OtelSut did not print TRACE_ID=... within 30s. stdout:\n" + stdout
+                + "\nstderr:\n" + stderr);
+        flushViaControlEndpoint(controlPort, traceId);
+
+        proc.destroyForcibly();
+        proc.waitFor(10, TimeUnit.SECONDS);
         outThread.join(5000);
         errThread.join(5000);
 
-        // Always print stderr for diagnosis.
+        // Always print captured output for diagnosis.
         System.out.println("[OtelWeaveE2E] SUT stderr:\n" + stderr);
         System.out.println("[OtelWeaveE2E] SUT stdout:\n" + stdout);
-
-        if (exited) {
-            int exitCode = proc.exitValue();
-            assertTrue(exitCode == 0,
-                    "OtelSut JVM exited with code " + exitCode + ". stderr:\n" + stderr);
-        } else {
-            // Process was destroyed after timeout; verify the SUT at least printed TRACE_ID
-            // before we continue (the null-check below will catch a genuine hang).
-            System.out.println("[OtelWeaveE2E] WARN: SUT JVM did not exit naturally within 60s "
-                    + "(likely control-endpoint non-daemon thread); destroyed forcibly. "
-                    + "Continuing if TRACE_ID was printed.");
-        }
-
-        // Extract the trace-id printed by OtelSut.
-        String traceId = extractTraceId(stdout.toString());
-        assertNotNull(traceId, "OtelSut did not print TRACE_ID=... to stdout. stdout:\n" + stdout);
         System.out.println("[OtelWeaveE2E] captured traceId=" + traceId);
 
         // pjacoco flushes a per-trace exec named <traceId>.exec.
@@ -179,7 +195,7 @@ class OtelWeaveE2E {
         return System.getProperty("java.class.path");
     }
 
-    private static Thread drainStream(final InputStream in, final StringBuilder sb) {
+    private static Thread drainStream(final InputStream in, final StringBuffer sb) {
         Thread t = new Thread(new Runnable() {
             public void run() {
                 try (BufferedReader r = new BufferedReader(new InputStreamReader(in, "UTF-8"))) {
@@ -193,6 +209,42 @@ class OtelWeaveE2E {
         t.setDaemon(true);
         t.start();
         return t;
+    }
+
+    /** Polls captured stdout until OtelSut prints {@code TRACE_ID=...}, up to {@code timeoutMs}. */
+    private static String awaitTraceId(StringBuffer stdout, long timeoutMs)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        String tid;
+        while ((tid = extractTraceId(stdout.toString())) == null
+                && System.currentTimeMillis() < deadline) {
+            Thread.sleep(200);
+        }
+        return tid;
+    }
+
+    /**
+     * Flushes the SUT's per-trace store ({@code testId == traceId} under {@code traceKeyAutoCreate})
+     * via its loopback control endpoint, so the {@code .exec} is on disk before the JVM is killed.
+     */
+    private static void flushViaControlEndpoint(int controlPort, String traceId) {
+        if (traceId == null) {
+            return;
+        }
+        try {
+            java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(
+                    "http://127.0.0.1:" + controlPort
+                            + "/__coverage__/test/stop?testId=" + traceId + "&result=passed")
+                    .openConnection();
+            c.setRequestMethod("POST");
+            c.setConnectTimeout(5000);
+            c.setReadTimeout(5000);
+            c.getResponseCode();
+            c.disconnect();
+        } catch (Exception e) {
+            System.out.println("[OtelWeaveE2E] WARN: control-endpoint flush failed on port "
+                    + controlPort + ": " + e);
+        }
     }
 
     private static String extractTraceId(String stdout) {

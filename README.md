@@ -222,6 +222,8 @@ java -javaagent:opentelemetry-javaagent.jar \
 ```
 
 > `traceKeyAutoCreate=true`가 없으면 traceId store 자동 생성과 scope weave 설치가 모두 비활성입니다. OTel 경로에서 OTel javaagent를 pjacoco 뒤에 나열하면 scope weave가 정상 작동하지 않을 수 있으므로 순서를 반드시 지키세요.
+>
+> OTel javaagent jar의 **파일명은 자유롭게 바꿔도 됩니다** (예: 컨테이너에서 `-javaagent:/opt/otel/otel.jar`로 마운트). pjacoco는 파일명이 아니라 jar 내부의 OTel shaded context-storage 클래스 존재로 javaagent를 식별합니다.
 
 ## 에이전트 직접 사용 (저수준)
 

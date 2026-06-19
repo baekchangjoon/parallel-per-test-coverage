@@ -214,18 +214,49 @@ public final class OtelScopeInboundActivator implements InboundActivator {
     // -----------------------------------------------------------------------
 
     /**
-     * Scans the JVM's command-line arguments for a {@code -javaagent:} entry that contains
-     * {@code opentelemetry-javaagent}. Returns the jar path, or {@code null} if not found.
+     * Scans the JVM's command-line arguments for the OTel javaagent jar and returns its path, or
+     * {@code null} if none is present. Identification is by {@link #isOtelAgentJar} — a filename
+     * fast-path plus a structural check (the jar contains the shaded {@link #STORAGE} class) — so it
+     * works regardless of how the agent jar is named at deploy time (e.g. {@code /opt/otel/otel.jar}).
      */
     static String discoverOtelJar() {
-        for (String arg : ManagementFactory.getRuntimeMXBean().getInputArguments()) {
-            if (arg.startsWith("-javaagent:") && arg.contains("opentelemetry-javaagent")) {
-                String spec = arg.substring("-javaagent:".length());
-                int eq = spec.indexOf('=');
-                return eq >= 0 ? spec.substring(0, eq) : spec;
+        return discoverOtelJar(ManagementFactory.getRuntimeMXBean().getInputArguments());
+    }
+
+    static String discoverOtelJar(java.util.List<String> inputArgs) {
+        for (String arg : inputArgs) {
+            if (!arg.startsWith("-javaagent:")) {
+                continue;
+            }
+            String spec = arg.substring("-javaagent:".length());
+            int eq = spec.indexOf('=');
+            String path = eq >= 0 ? spec.substring(0, eq) : spec;
+            if (isOtelAgentJar(path)) {
+                return path;
             }
         }
         return null;
+    }
+
+    /**
+     * Identifies the OTel javaagent jar WITHOUT relying on a filename convention. Real deployments
+     * mount the agent under arbitrary names (e.g. {@code -javaagent:/opt/otel/otel.jar}), so the
+     * authoritative test is structural: a jar that contains the shaded {@link #STORAGE} class we
+     * weave IS the OTel javaagent. pjacoco's own agent jar (also a {@code -javaagent}) does not
+     * contain that shaded class, so it is correctly ignored.
+     *
+     * <p>A fast-path filename check avoids opening the jar in the conventional case.
+     */
+    private static boolean isOtelAgentJar(String path) {
+        if (path.contains("opentelemetry-javaagent")) {
+            return true;
+        }
+        try (JarFile jf = new JarFile(path)) {
+            return jf.getEntry(STORAGE.replace('.', '/') + ".class") != null;
+        } catch (Throwable t) {
+            // Unreadable / missing jar — not identifiable as the OTel agent (best-effort, REQ-003).
+            return false;
+        }
     }
 
     // -----------------------------------------------------------------------
