@@ -63,7 +63,7 @@ class BraveScopeWeaveIT {
 
         // Install the Brave scope weave BEFORE creating the Tracing instance so brave's
         // ThreadLocalCurrentTraceContext (and its inner Scope impl) are woven at first load.
-        new BraveScopeInboundActivator(bridge).install(inst);
+        new BraveScopeInboundActivator(bridge, new Metrics()).install(inst);
 
         // Build a real Brave Tracing with ThreadLocalCurrentTraceContext.
         CurrentTraceContext ctc = ThreadLocalCurrentTraceContext.create();
