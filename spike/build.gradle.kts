@@ -55,3 +55,26 @@ val braveSpikeAgent by tasks.registering(Jar::class) {
         )
     }
 }
+
+// ── GA-3 / GA-1(OTel) shaded-storage weave spike agent (fat jar) ─────────────────────────────
+// Packages OtelWeaveHookAgent + advice + bridge + byte-buddy. Manifest declares premain/agentmain
+// and retransform capability. No OTel on the agent classpath — the shaded API is reached
+// reflectively/woven. The bridge (OtelWeaveBridge + CoverageContext) is injected into the bootstrap
+// CL at install time so it is reachable from the OTel AgentClassLoader-resident woven storage.
+val otelWeaveAgent by tasks.registering(Jar::class) {
+    archiveFileName.set("otel-weave-spike-agent.jar")
+    from(sourceSets.main.get().output)
+    from(configurations.runtimeClasspath.get()
+        .filter { it.name.startsWith("byte-buddy") }
+        .map { zipTree(it) }) {
+        exclude("META-INF/**")
+    }
+    manifest {
+        attributes(
+            "Premain-Class" to "io.pjacoco.spike.OtelWeaveHookAgent",
+            "Agent-Class" to "io.pjacoco.spike.OtelWeaveHookAgent",
+            "Can-Retransform-Classes" to "true",
+            "Can-Redefine-Classes" to "true"
+        )
+    }
+}

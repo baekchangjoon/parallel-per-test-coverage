@@ -111,9 +111,93 @@ so the choke-point fallback is not needed on the Brave path.
 
 ---
 
-## GA-3 — (pending, Task 3)
+## GA-3 — classloader reachability + 2-agent ordering + OTel weave green — **PASS**
 
-## GA-1 (OpenTelemetry) — **FAIL (primary candidate) → adopt shaded-ContextStorage weave**
+**Date:** 2026-06-19
+**Spike target:** same minimal standalone Spring Boot 2.7.18 app (Java 8) + OTel javaagent v2.11.0 as
+the GA-1(OTel) spike, run on Temurin JDK 8 (`1.8.0_412`). `/spike/async` hands off to a plain
+`java.util.concurrent.ExecutorService`; a servlet `Filter` reads the active span at `service()` entry.
+
+### Verdict: PASS on all three questions. This run also **closes the GA-1 (OTel) weave gap** — the
+recommended shaded-`attach` weave is now proven GREEN, not just inferred from bytecode.
+
+### Q1 — OTel shaded-`attach` weave: PASS (GREEN)
+
+A second ByteBuddy java-agent (`premain`, `RedefinitionStrategy.RETRANSFORMATION`,
+`disableClassFormatChanges`) attached alongside the OTel javaagent **matches + weaves the shaded
+storage** `io.opentelemetry.javaagent.shaded.io.opentelemetry.context.ThreadLocalContextStorage`:
+ENTER on `attach(Context)`, EXIT on `ThreadLocalContextStorage$ScopeImpl#close()`, reading
+`Span.fromContext(ctx).getSpanContext().getTraceId()` reflectively (no OTel compile dep).
+
+```
+[OTEL-WEAVE] weaving storage io.opentelemetry.javaagent.shaded.io.opentelemetry.context.ThreadLocalContextStorage loader=bootstrap
+[OTEL-WEAVE] weaving scope io.opentelemetry.javaagent.shaded.io.opentelemetry.context.ThreadLocalContextStorage$ScopeImpl loader=bootstrap
+[OTEL-WEAVE attach tid=11111111111111111111111111111111 thread=http-nio-8080-exec-1 scope=520d010b covCtx=11111111111111111111111111111111]
+[SPIKE-REQ]  request thread=http-nio-8080-exec-1 span.tid=11111111111111111111111111111111
+[OTEL-WEAVE attach tid=11111111111111111111111111111111 thread=pool-1-thread-1 scope=41ddb2da covCtx=11111111111111111111111111111111]
+[SPIKE-WORK] async thread=pool-1-thread-1 span.tid=11111111111111111111111111111111
+[OTEL-WEAVE detach tid=11111111111111111111111111111111 thread=pool-1-thread-1 scope=41ddb2da]
+[OTEL-WEAVE detach tid=11111111111111111111111111111111 thread=http-nio-8080-exec-1 scope=520d010b]
+```
+
+`attach`/`detach` fire on the **request thread AND the executor handoff thread, same traceId**, paired by
+scope identity (second request `aaaa…` repeated the pattern on `exec-4`+`pool-1-thread-2`).
+
+**Two blockers found + fixed (both load-bearing for T10):**
+1. `NoSuchTypeException: Cannot resolve type description for ...shaded...ContextStorage` — the shaded
+   classes are bootstrap-loaded; ByteBuddy's default `TypePool` reads supertypes through the target
+   (bootstrap) CL and can't find the shaded interface bytes, so the transform applied NO advice. Fix: a
+   custom `PoolStrategy` compounding a `ClassFileLocator.ForJarFile` over the OTel agent jar (path
+   auto-discovered from the JVM `-javaagent:` args).
+2. `IllegalAccessException ...SdkSpan` — concrete `Span`/`SpanContext` impls are non-public; resolve the
+   getters from the PUBLIC shaded interfaces and invoke through them.
+
+**Already-loaded RETRANSFORM proven:** a watcher retransformed the shaded classes after warm-up:
+`already-loaded ...ThreadLocalContextStorage loader=bootstrap modifiable=true; ...$ScopeImpl
+modifiable=true` → `RETRANSFORM OK`, and a fresh request still produced attach on request + pool threads.
+So the shaded bootstrap classes are modifiable + retransformable and re-weaving is idempotent.
+
+### Q2 — Classloader placement of shared state: **bootstrap**
+
+The shaded context classes load on the **bootstrap CL** (every weave line: `loader=bootstrap`) in v2.11.0
+— this **corrects** the T1 report's tentative "resident in the OTel AgentClassLoader" assumption for the
+`context.*` shaded package. pjacoco's shared `CoverageContext` (and the bridge) must therefore live on the
+bootstrap CL (the system CL where the `-javaagent` jar lives is NOT on bootstrap's parent chain). The agent
+injects them via `Instrumentation.appendToBootstrapClassLoaderSearch`. Confirmed end-to-end:
+
+```
+[OTEL-WEAVE Q2] OtelWeaveBridge loader=bootstrap CoverageContext loader=bootstrap shadedContext loader=bootstrap
+```
+
+`covCtx=<traceId>` on every attach line proves the woven advice wrote the traceId into the
+bootstrap-resident `CoverageContext` and read the same value back (single shared instance). The Brave
+advice runs in the app CL, whose parent chain also reaches bootstrap, so a single bootstrap-resident
+`CoverageContext` is reachable from BOTH backends. **Decision: place `CoverageContext` + trace-scope bridge
+state on the bootstrap CL, injected by pjacoco's agent.**
+
+### Q3 — Two-agent install ordering: **order does NOT matter**; choke-point valid
+
+Both `OTel-first` and `pjacoco-first` CLI orderings produce a green weave (attach/detach on request +
+handoff threads, zero errors). pjacoco-first catches the shaded class at its initial load; OTel-first
+catches it at initial load too (and the retransform probe proves the already-loaded case). The only
+ordering-robust requirement is the OTel-jar TypePool locator (Q1 blocker 1), not the agent order.
+Choke-point fallback sees a valid span at servlet entry:
+`[SPIKE-CHOKE] servlet service() entry ... span.tid=1111… valid=true`. The weave covers the async handoff,
+so the choke-point is a defensive sync-HTTP-only fallback (same as the Brave path).
+
+### Reproduction
+
+- Agent: `spike/src/main/java/io/pjacoco/spike/OtelWeaveHookAgent.java` (+ `OtelAttachAdvice`,
+  `OtelCloseAdvice`, `OtelWeaveBridge`, `CoverageContext`). Build:
+  `cd spike && ../gradlew otelWeaveAgent` → `spike/build/libs/otel-weave-spike-agent.jar`.
+- Run (OTel-first): `java -javaagent:opentelemetry-javaagent.jar -javaagent:otel-weave-spike-agent.jar
+  -Dotel.{traces,metrics,logs}.exporter=none -jar app.jar`; exercise
+  `curl -H 'traceparent: 00-1111…1111-2222…2222-01' http://localhost:8080/spike/async`.
+- Full investigation: `sdd/task-3-report.md`. Scratch app/agent (`/tmp/otel-weave-spike`) discarded.
+
+---
+
+## GA-1 (OpenTelemetry) — **FAIL for the SPI primary → PASS via shaded-ContextStorage weave (proven GREEN in GA-3)**
 
 **Date:** 2026-06-19
 **Spike target:** minimal standalone Spring Boot 2.7.18 app (Java 8) with `opentelemetry-api:1.45.0`
@@ -201,8 +285,10 @@ Brave scope-weave.**
 (not public/stable, pre-`get()`-only, and bypassed by `AgentContextStorage` anyway); requiring the app
 to ship its own provider (not zero-touch and still does not observe attach/detach).
 
-**Carry to GA-3 / T3:** confirm pjacoco can match + retransform shaded classes resident in the OTel
-`AgentClassLoader`, and that OTel-premain-then-pjacoco agent ordering still permits retransformation.
+**Carry to GA-3 / T3 — RESOLVED (see GA-3 above, PASS):** pjacoco CAN match + weave the shaded storage
+and retransform it once already-loaded; the shaded `context.*` classes are **bootstrap-loaded** (not
+`AgentClassLoader`-resident as guessed here); both agent orderings work, provided a `PoolStrategy` locator
+over the OTel agent jar is supplied so ByteBuddy can resolve the shaded type hierarchy.
 
 ### Reproduction
 
