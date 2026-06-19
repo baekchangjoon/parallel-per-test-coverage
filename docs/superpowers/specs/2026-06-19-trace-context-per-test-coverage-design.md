@@ -48,7 +48,7 @@ pjacoco는 SUT에 붙은 JaCoCo probe 버퍼를 **testId별로 분할**해 per-t
 ## 3. 불변 제약 (NON-NEGOTIABLE)
 
 1. **핫패스 무변경.** `CoverageBridge.recordCoverage`는 여전히 `CoverageContext`(ThreadLocal) **1-read** → `store.record()`. probe당 트레이서 조회를 추가하지 않는다. (단위 테스트로 가드)
-2. **트레이서 의존은 전부 reflective/optional.** 컴파일·런타임 하드 의존 0. Java 8 호환. 현 `ServletAdvice`의 reflective 패턴(`Class.forName` + `Method.invoke`로 app-classloader 클래스 접근, 하드 의존 회피)을 따른다. (`BaggageParser`는 순수 문자열 파서로 reflection을 쓰지 않으므로 이 항의 모델이 아니다.) **classloader 경계 주의:** pjacoco 핵심은 bootstrap/agent classloader에서 로드되는 반면 `brave.*`/`io.opentelemetry.*`는 app classloader에 있으므로, 트레이서 API 접근은 thread context classloader(또는 핸드에 든 객체의 classloader)를 통해 해소한다 — bootstrap에서 직접 `Class.forName`하면 `ClassNotFoundException`. → §9 GA-3.
+2. **트레이서 의존은 optional, 런타임 하드 의존 0.** Java 8 호환. **런타임** 하드 의존이 없는 것이 불변이다(트레이서 부재 시 graceful 폴백). 트레이서를 볼 수 있는 classloader에 거주하는 코드(OTel extension, app-CL에 인라인되는 ByteBuddy 우븐 advice)는 `compileOnly` 의존으로 타입-세이프하게 컴파일해도 된다; bootstrap/agent-CL 거주 코드는 현 `ServletAdvice`의 reflective 패턴(`Class.forName` + `Method.invoke`)을 따른다. (`BaggageParser`는 순수 문자열 파서로 reflection을 쓰지 않으므로 이 항의 모델이 아니다.) **classloader 경계 주의:** pjacoco 핵심은 bootstrap/agent classloader에서 로드되는 반면 `brave.*`/`io.opentelemetry.*`는 app classloader에 있으므로, 트레이서 API 접근은 thread context classloader(또는 핸드에 든 객체의 classloader)를 통해 해소한다 — bootstrap에서 직접 `Class.forName`하면 `ClassNotFoundException`. → §9 GA-3.
 3. **best-effort, 앱 교란 금지.** 모든 신규 경로는 `catch (Throwable)`로 swallow하며 SUT로 throw하지 않는다. 커버리지 손실은 허용, 앱 크래시는 불가.
 
 ---
@@ -94,6 +94,7 @@ pjacoco는 SUT에 붙은 JaCoCo probe 버퍼를 **testId별로 분할**해 per-t
 3. **`TestIdMappingRegistry`** — `traceId → testId(사람이 읽는 표준화된 "FQCN#method")` **N:1** 맵(한 testId가 여러 traceId를 가질 수 있음 — 테스트가 다수 outbound 호출/재시도를 내므로). 집계기는 같은 testId의 모든 per-traceId store를 출력 시점에 병합.
    - **등록 경로(C2 기본):** `ControlEndpoint`에 신규 엔드포인트 추가 — `POST /__coverage__/trace/map?traceId=<T>&testId=<FQCN%23method>`(기존엔 `/test/start`·`/test/stop`만 존재). 미등록 lookup은 입력 traceId를 그대로 반환(폴백).
    - **C3에선 per-service 등록 불필요:** 서비스는 traceId로만 기록하고, 러너가 `traceId→testId` 맵을 **중앙에 한 번** 보고하여 집계 시점에 적용(per-service fan-out 회피). 단일 서비스 편의용으로만 control-endpoint 등록을 쓴다.
+   - **bounded:** traceId 카디널리티가 높으므로 매핑 저장소는 TTL 또는 LRU 상한을 둬 장기 실행 서비스의 OOM을 막는다.
    - **testId 형식 정규화:** 현 코드가 불일치한다 — `RunLeafAdvice`는 `Description.getClassName()`(FQCN), `PjacocoExtension`/`PjacocoInProcessRule`은 `getSimpleName()`/혼재. 매핑 등록 시 **FQCN#method로 정규화**를 강제한다.
    - in-process(트레이서 부재) 경로에서는 testId가 직접 들어오므로 매핑이 항등.
 
