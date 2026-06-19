@@ -4,6 +4,7 @@ import io.pjacoco.agent.api.CoverageControl;
 import io.pjacoco.agent.control.ControlEndpoint;
 import io.pjacoco.agent.inbound.brave.BraveScopeInboundActivator;
 import io.pjacoco.agent.inbound.junit4.JUnit4InboundActivator;
+import io.pjacoco.agent.inbound.otel.OtelScopeInboundActivator;
 import io.pjacoco.agent.inbound.servlet.ServletInboundActivator;
 import io.pjacoco.agent.observability.AgentLog;
 import io.pjacoco.agent.observability.Metrics;
@@ -106,15 +107,17 @@ public final class Bootstrap {
             new JUnit4InboundActivator().install(inst);
         }
 
-        // Brave scope weave: woven advice drives TraceScopeBridge so async-handoff threads are attributed
-        // to the same test as the request thread (REQ-005, REQ-006). Gated on traceKeyAutoCreate so that
-        // the default (no-tracer) hot-path is completely unchanged when the feature is off.
+        // Brave + OTel scope weave: woven advice drives TraceScopeBridge so async-handoff threads are
+        // attributed to the same test as the request thread (REQ-004, REQ-005, REQ-006). Gated on
+        // traceKeyAutoCreate so that the default (no-tracer) hot-path is completely unchanged when off.
         if (options.traceKeyAutoCreate()) {
             CoverageKeyResolver resolver = new CoverageKeyResolver(
                     Arrays.<io.pjacoco.agent.trace.TestIdSource>asList(
                             new OtelTestIdSource(), new BraveTestIdSource()));
             TraceScopeBridge traceBridge = new TraceScopeBridge(registry, resolver);
             new BraveScopeInboundActivator(traceBridge, metrics).install(inst);
+            // OTel weave: reuses the same traceBridge; best-effort (a missing OTel javaagent is a no-op).
+            new OtelScopeInboundActivator(traceBridge, metrics).install(inst);
         }
 
         log.info("agent installed (output=" + options.outputDir()

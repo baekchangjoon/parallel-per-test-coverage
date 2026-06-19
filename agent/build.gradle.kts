@@ -204,6 +204,51 @@ val e2eJakartaTest = tasks.register<Test>("e2eJakartaTest") {
     extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension::class.java).isEnabled = false
 }
 
+// ---- otelE2e source set: forked-JVM OTel scope weave E2E (REQ-004, REQ-006) ----
+// Kept separate from integrationTest to avoid OTel API bleeding into tests that assert
+// "no OTel on classpath" (NoTracerAttachIT). Only added to 'check' when the OTel agent jar is
+// present; the Gradle task itself is always registered (so CI can invoke it explicitly).
+val otelE2eSrc = sourceSets.create("otelE2e") {
+    java.srcDir("src/otelE2e/java")
+    compileClasspath += sourceSets["main"].output
+    runtimeClasspath += sourceSets["main"].output
+}
+val otelE2eImplementation by configurations.getting {
+    extendsFrom(configurations.testImplementation.get())
+}
+@Suppress("UNUSED_VARIABLE")
+val otelE2eRuntimeOnly by configurations.getting {
+    extendsFrom(configurations.testRuntimeOnly.get())
+}
+dependencies {
+    // OTel API: only in otelE2e (SUT + test harness). NOT in main or integrationTest classpath.
+    "otelE2eImplementation"("io.opentelemetry:opentelemetry-api:1.45.0")
+    "otelE2eImplementation"("io.opentelemetry:opentelemetry-context:1.45.0")
+}
+// SUT classes at Java 8 bytecode so jacoco uses the field probe-array strategy.
+tasks.named<JavaCompile>("compileOtelE2eJava") {
+    options.release.set(8)
+}
+
+// Forked-JVM OTel smoke E2E: proves the scope weave fires with the REAL OTel javaagent and
+// attributes async coverage to the same trace (REQ-004, REQ-006).
+val otelWeaveE2e = tasks.register<Test>("otelWeaveE2e") {
+    description = "Forked-JVM OTel scope weave E2E: proves REQ-004 (request thread) and REQ-006 (async attribution)"
+    group = "verification"
+    testClassesDirs = otelE2eSrc.output.classesDirs
+    classpath = otelE2eSrc.runtimeClasspath
+    useJUnitPlatform { includeTags("otelE2e") }
+    outputs.upToDateWhen { false }
+    dependsOn(tasks.shadowJar)
+    val agentJar = layout.buildDirectory.file("libs/jacocoagent-parallel.jar")
+    val otelAgentJar = layout.buildDirectory.file("otel-agent/opentelemetry-javaagent.jar")
+    doFirst {
+        systemProperty("pjacoco.shadedJar", agentJar.get().asFile.absolutePath)
+        systemProperty("pjacoco.otelAgent", otelAgentJar.get().asFile.absolutePath)
+    }
+    extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension::class.java).isEnabled = false
+}
+
 tasks.named("check") { dependsOn(integrationTest) }
 
 // ---- self-coverage of the agent (io.pjacoco.agent.*) by the in-process suites ----

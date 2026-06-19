@@ -3,6 +3,7 @@ package io.pjacoco.agent.trace;
 import io.pjacoco.agent.context.CoverageContext;
 import io.pjacoco.agent.store.TestStore;
 import io.pjacoco.agent.store.TestStoreRegistry;
+import io.pjacoco.agent.trace.boot.TraceWeaveHandler;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -30,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Every public method swallows all {@link Throwable}s.  A bug in this class must never
  * propagate into the application.
  */
-public final class TraceScopeBridge {
+public final class TraceScopeBridge implements TraceWeaveHandler {
 
     private final TestStoreRegistry registry;
 
