@@ -30,8 +30,10 @@ import net.bytebuddy.asm.Advice;
  * In a no-tracer environment the first two sources return {@code null} (reflective Class.forName
  * throws → best-effort null), so baggage-only behaviour is byte-for-byte unchanged.
  *
- * <p>The "clear only what we set" guard ({@link #SET_BY_US}) prevents {@link #deactivate} from
- * stomping a {@link CoverageContext} that a tracer scope (Task 10) set on this thread.
+ * <p>{@link #deactivate} unconditionally clears the {@link CoverageContext} so that thread-pool
+ * workers never inherit a previous request's store (REQ-001 thread hygiene).  Async attribution
+ * is handled entirely by the trace-scope WEAVE on worker threads — deactivate does not need a
+ * guard.  See docs/superpowers/decisions/2026-06-19-deactivate-clear-semantics.md.
  */
 public final class ServletAdvice {
     /** Bound once by ServletInboundActivator; read by the woven advice. */
@@ -43,9 +45,6 @@ public final class ServletAdvice {
      */
     public static volatile List<TestIdSource> traceSources =
             Arrays.<TestIdSource>asList(new OtelTestIdSource(), new BraveTestIdSource());
-
-    /** Marks that THIS activate() call set the CoverageContext, so deactivate() may clear it. */
-    private static final ThreadLocal<Boolean> SET_BY_US = new ThreadLocal<Boolean>();
 
     private ServletAdvice() {}
 
@@ -68,21 +67,13 @@ public final class ServletAdvice {
                 TestStore store = reg.forCoverageKey(key);
                 if (store != null) {
                     CoverageContext.set(store);
-                    SET_BY_US.set(Boolean.TRUE);
                 }
             }
         } catch (Throwable ignored) { /* never disturb the app */ }
     }
 
     public static void deactivate() {
-        try {
-            if (Boolean.TRUE.equals(SET_BY_US.get())) {
-                CoverageContext.clear();
-            }
-        } catch (Throwable ignored) {
-        } finally {
-            try { SET_BY_US.remove(); } catch (Throwable ignored) {}
-        }
+        try { CoverageContext.clear(); } catch (Throwable ignored) {}
     }
 
     private static String header(Object request, String name) {

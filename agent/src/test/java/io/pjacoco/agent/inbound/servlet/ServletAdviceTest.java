@@ -1,6 +1,5 @@
 package io.pjacoco.agent.inbound.servlet;
 
-import static java.util.Arrays.asList;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
@@ -10,11 +9,9 @@ import io.pjacoco.agent.context.CoverageContext;
 import io.pjacoco.agent.observability.AgentLog;
 import io.pjacoco.agent.observability.Metrics;
 import io.pjacoco.agent.output.ExecWriter;
-import io.pjacoco.agent.store.TestStore;
 import io.pjacoco.agent.store.TestStoreRegistry;
 import io.pjacoco.agent.trace.TestIdSource;
 import java.nio.file.Path;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import javax.servlet.http.HttpServletRequest;
@@ -74,30 +71,5 @@ class ServletAdviceTest {
         assertNull(CoverageContext.get());
         ServletAdvice.activate(new Object());           // not an HttpServletRequest
         assertNull(CoverageContext.get());
-    }
-
-    @Test
-    void deactivateLeavesContextWeDidNotSet(@TempDir Path dir) {
-        // Arrange: suppress all traceSources so activate() resolves no key
-        originalTraceSources = ServletAdvice.traceSources;
-        ServletAdvice.traceSources = Collections.<TestIdSource>emptyList();
-
-        TestStoreRegistry r = reg(dir, false);
-        r.start("EXT", null, "sha");
-        ServletAdvice.registry = r;
-
-        // An external component set the context BEFORE our activate (e.g. a trace scope)
-        TestStore external = r.active("EXT");
-        CoverageContext.set(external);
-
-        // No baggage header → resolver returns null → activate() does NOT set SET_BY_US
-        HttpServletRequest req = mock(HttpServletRequest.class);
-        when(req.getHeader("baggage")).thenReturn(null);
-        ServletAdvice.activate(req);
-
-        // deactivate() must NOT stomp a context we did not set
-        ServletAdvice.deactivate();
-        assertSame(external, CoverageContext.get(),
-                "deactivate must not clear a context set by an external caller");
     }
 }
