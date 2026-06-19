@@ -131,7 +131,12 @@ public final class TraceScopeBridge {
      * @return a handle that must be passed to {@link #exit(TraceScope)}
      */
     public TraceScope enterResolved() {
-        return enter(resolver.resolve());
+        try {
+            return enter(resolver.resolve());
+        } catch (Throwable ignored) {
+            // best-effort: resolver.resolve() threw before enter() could run (REQ-003)
+            return new TraceScope(CoverageContext.get(), Thread.currentThread());
+        }
     }
 
     // -----------------------------------------------------------------------

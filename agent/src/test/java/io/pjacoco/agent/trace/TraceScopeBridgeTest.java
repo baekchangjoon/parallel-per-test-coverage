@@ -1,6 +1,7 @@
 package io.pjacoco.agent.trace;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -247,6 +248,48 @@ class TraceScopeBridgeTest {
 
         bridge.exit(null);  // must not throw, must not touch context
         assertSame(store, CoverageContext.get(), "exit(null) must not touch context");
+    }
+
+    // -----------------------------------------------------------------------
+    // REQ-003: enterResolved() must never throw even when resolver.resolve() throws
+    // -----------------------------------------------------------------------
+
+    /**
+     * Verifies the no-throw contract of enterResolved() with a throwing TestIdSource.
+     *
+     * NOTE ON COVERAGE PATH: CoverageKeyResolver is final and cannot be subclassed, so we
+     * cannot make resolver.resolve() itself throw from a test. Instead, we use a throwing
+     * TestIdSource — CoverageKeyResolver.resolve() already catches that internally (skips it
+     * and returns null), so the NEW catch block in enterResolved() is not directly exercised
+     * by this test. What IS verified: the full no-throw contract — enterResolved() returns a
+     * non-null TraceScope and exit() is a harmless no-op — which is the observable guarantee
+     * of REQ-003. The new catch block protects against a hypothetical future change to
+     * CoverageKeyResolver or resolve() being called differently; the fix is structurally
+     * correct and the contract is fully pinned here.
+     */
+    @Test
+    void enterResolvedDoesNotThrowWhenSourceThrows(@TempDir Path dir) {
+        TestStoreRegistry registry = newRegistry(dir);
+
+        // Source whose currentKey() throws — resolver catches it internally and returns null.
+        // enterResolved() then calls enter(null), which is a no-op enter returning a valid handle.
+        CoverageKeyResolver resolver = new CoverageKeyResolver(
+                Collections.<TestIdSource>singletonList(new TestIdSource() {
+                    public String currentKey() { throw new RuntimeException("source boom"); }
+                }));
+        TraceScopeBridge bridge = new TraceScopeBridge(registry, resolver);
+
+        // Capture context before — null on a clean thread
+        TestStore before = CoverageContext.get();
+
+        // Must not throw; must return a non-null scope
+        TraceScope scope = bridge.enterResolved();
+        assertNotNull(scope, "enterResolved() must return non-null scope even when source throws");
+
+        // paired exit must also not throw and must leave context as it was
+        bridge.exit(scope);
+        assertSame(before, CoverageContext.get(),
+                "context after exit must equal context before enterResolved");
     }
 
     // -----------------------------------------------------------------------
