@@ -114,7 +114,7 @@ public final class Bootstrap {
                     Arrays.<io.pjacoco.agent.trace.TestIdSource>asList(
                             new OtelTestIdSource(), new BraveTestIdSource()));
             TraceScopeBridge traceBridge = new TraceScopeBridge(registry, resolver);
-            new BraveScopeInboundActivator(traceBridge).install(inst);
+            new BraveScopeInboundActivator(traceBridge, metrics).install(inst);
         }
 
         log.info("agent installed (output=" + options.outputDir()
