@@ -2,15 +2,14 @@ package io.pjacoco.agent.inbound.servlet;
 
 import io.pjacoco.agent.context.CoverageContext;
 import io.pjacoco.agent.inbound.BaggageParser;
+import io.pjacoco.agent.observability.Metrics;
 import io.pjacoco.agent.store.TestStore;
 import io.pjacoco.agent.store.TestStoreRegistry;
 import io.pjacoco.agent.trace.CoverageKeyResolver;
 import io.pjacoco.agent.trace.BraveTestIdSource;
-import io.pjacoco.agent.trace.LocalTestIdSource;
 import io.pjacoco.agent.trace.OtelTestIdSource;
 import io.pjacoco.agent.trace.TestIdSource;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import net.bytebuddy.asm.Advice;
@@ -25,10 +24,11 @@ import net.bytebuddy.asm.Advice;
  * <ol>
  *   <li>{@link OtelTestIdSource} — reads the current OTel trace ID from the thread context.</li>
  *   <li>{@link BraveTestIdSource} — reads the current Brave trace ID from the thread context.</li>
- *   <li>{@link LocalTestIdSource} — falls back to the {@code baggage} header's {@code test.id}.</li>
+ *   <li>Local/baggage fallback — reads {@code test.id} from the {@code baggage} header directly.</li>
  * </ol>
  * In a no-tracer environment the first two sources return {@code null} (reflective Class.forName
- * throws → best-effort null), so baggage-only behaviour is byte-for-byte unchanged.
+ * throws → best-effort null), so activation falls back to the baggage header.  Each fallback
+ * activation increments {@link Metrics#fallbackActivations} (REQ-019).
  *
  * <p>{@link #deactivate} unconditionally clears the {@link CoverageContext} so that thread-pool
  * workers never inherit a previous request's store (REQ-001 thread hygiene).  Async attribution
@@ -38,6 +38,12 @@ import net.bytebuddy.asm.Advice;
 public final class ServletAdvice {
     /** Bound once by ServletInboundActivator; read by the woven advice. */
     public static volatile TestStoreRegistry registry;
+
+    /**
+     * Bound once by ServletInboundActivator; read by the woven advice to count fallback
+     * activations (REQ-019).  May be {@code null} in tests that do not need metric assertions.
+     */
+    public static volatile Metrics metrics;
 
     /**
      * Ordered tracer sources — OTel first, Brave second.  Declared {@code public volatile} so
@@ -53,16 +59,19 @@ public final class ServletAdvice {
             TestStoreRegistry reg = registry;
             if (request == null || reg == null) return;
 
-            // Build a per-request resolver: tracer sources first, baggage as the local fallback.
-            List<TestIdSource> sources = new ArrayList<TestIdSource>(traceSources);
-            final Object req = request;
-            sources.add(new LocalTestIdSource(new java.util.function.Supplier<String>() {
-                public String get() {
-                    return BaggageParser.testId(header(req, "baggage"));
-                }
-            }));
+            // Try tracer sources first (OTel, Brave).
+            String key = new CoverageKeyResolver(traceSources).resolve();
 
-            String key = new CoverageKeyResolver(sources).resolve();
+            // If no tracer context is active, fall back to the baggage header (REQ-007).
+            if (key == null) {
+                String local = BaggageParser.testId(header(request, "baggage"));
+                if (local != null) {
+                    key = local;
+                    Metrics m = metrics;
+                    if (m != null) m.fallbackActivations.incrementAndGet();  // REQ-019
+                }
+            }
+
             if (key != null) {
                 TestStore store = reg.forCoverageKey(key);
                 if (store != null) {
