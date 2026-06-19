@@ -86,7 +86,7 @@ pjacoco는 SUT에 붙은 JaCoCo probe 버퍼를 **testId별로 분할**해 per-t
    - resolve 우선순위: 살아있는 트레이서의 valid traceId가 있으면 그것, 없으면 local. classloader 경계는 §3-2/GA-3.
 
 2. **`TraceScopeBridge` (백엔드당 1개)** — async 전파의 핵심. 트레이서가 어느 스레드든 trace context를 current로 만들 때 `CoverageContext`를 동기화한다. **주입 메커니즘은 트레이서별로 다르며, 명명한 후보는 GA-1로 검증·확정한다:**
-   - **OTel** — ⚠️ **GA-1 spike(Task 1) 결과로 확정:** `ContextStorageProvider` SPI extension은 **FAIL**(OTel javaagent의 `AgentContextStorage`가 `APPLICATION_CONTEXT` 키로 동작하며 래핑된 storage의 `attach()`로 위임하지 않아 attach/detach 관측 불가; extension은 또한 `ExtensionClassLoader`에 로드돼 app CL에 안 보임). `ContextStorage.addWrapper`도 비공개·최초 `get()` 전 한정이라 불가. **채택 메커니즘 = OTel agent의 shaded `io.opentelemetry...ThreadLocalContextStorage.attach()`(OTel `AgentClassLoader` 거주)를 ByteBuddy weave**(PASS한 Brave scope-weave의 OTel 등가물). trace context 전파 자체는 spike에서 입증됨(request+executor 스레드 동일 traceId). 단 이 weave는 `AgentClassLoader` 거주 shaded 클래스의 match+retransform과 OTel-premain↔pjacoco 순서가 가능해야 성립 → **GA-3에서 green weave로 확정**(미검증 상태).
+   - **OTel** — ✅ **GA-1/GA-3 spike(Task 1,3)로 확정·green:** `ContextStorageProvider` SPI extension은 FAIL(`AgentContextStorage`가 래핑 storage로 위임 안 함, extension은 `ExtensionClassLoader`라 app 불가시)이므로, **채택 = OTel agent의 shaded `ContextStorage.attach()`(OTel 2.11.0에선 **bootstrap-loaded**) ByteBuddy weave** — request+executor 스레드 동일 traceId attach/detach green 입증. T10 필수 사항: 커스텀 `PoolStrategy` + OTel jar `ClassFileLocator.ForJarFile`(shaded supertype 해소), trace-id getter는 **public shaded `Span`/`SpanContext` 인터페이스**로 호출(concrete `SdkSpan` non-public → `IllegalAccessException`), retransform OK(`isModifiableClass=true`), shaded prefix는 OTel 버전별 핀(`hasSuperType` matcher 권장).
    - **Brave** — `ScopeDecorator`는 `CurrentTraceContext.Builder.addScopeDecorator()`로 **build 시점에만** 등록되고 build 후 인스턴스는 불변이라 사후 reflective 주입은 깨지기 쉽다. 후보 우선순위: (a) Spring `CurrentTraceContextCustomizer` 빈(단, Spring 통합 필요 — pure-agent 제약과 상충), (b) Sleuth가 만든 `CurrentTraceContext`의 scope 진입/탈출 메서드를 **ByteBuddy weave**(주 대안), (c) 빈 교체. spike가 (b)를 우선 시도.
    - 동작: scope enter → traceId resolve → `CoverageContext.set(<coverage key의 store>)`; scope exit → **이전 값 복원**. **복원 상태는 ThreadLocal 스택이 아니라 enter가 반환하는 scope 객체의 필드에 보관**(Brave `ThreadLocalCurrentTraceContext`의 revert 방식과 동일)하여, scope가 연 스레드와 닫는 스레드가 다를 때(예: CompletableFuture 체인) 닫는 스레드의 컨텍스트를 오염시키지 않는다.
    - 트레이서가 전파하는 모든 스레드(executor/`@Async`/Kafka consumer)에 커버리지가 자동으로 따라온다. **C3를 가능케 하는 조각.**
@@ -224,13 +224,12 @@ pjacoco는 SUT에 붙은 JaCoCo probe 버퍼를 **testId별로 분할**해 per-t
 
 - **GA-1 (C1 게이트): scope 훅 주입 가능성.** spike로 확정 — 결과 반영:
   - **Brave: ✅ PASS (Task 2).** 불변 `ThreadLocalCurrentTraceContext`의 `newScope/maybeScope` + `Scope.close()` ByteBuddy weave로 sync+@Async 동일 traceId enter/exit 관측. 채택.
-  - **OTel: ⚠️ 부분 (Task 1).** `ContextStorageProvider` SPI extension **FAIL**(`AgentContextStorage`가 래핑 storage로 위임 안 함; extension은 `ExtensionClassLoader`라 app에 안 보임). 채택 메커니즘 = shaded `ThreadLocalContextStorage.attach()` ByteBuddy weave. trace 전파는 입증, **weave 자체(AgentClassLoader retransform+순서)는 GA-3에서 green 확인 필요(미검증).**
+  - **OTel: ✅ PASS (Task 1+3).** SPI extension FAIL → shaded `ContextStorage.attach()` ByteBuddy weave가 green(request+executor 동일 traceId). PoolStrategy+OTel-jar locator, public shaded 인터페이스 호출 필수.
   - 거짓이면: scope 브리지 불가 → §7 surface별 choke-point read 폴백(Kafka/@Async 미커버).
+- **GA-3 (classloader & 순서): ✅ PASS (Task 3).** 공유 `CoverageContext`는 **bootstrap classloader** 배치(양 backend 우븐 advice에서 도달, round-trip 입증). 2-agent CLI 순서 무관(OTel-first/pjacoco-first 모두 green), retransform 가능, choke-point가 valid span 관측.
 - **GA-2 (C3-OTel 전제):** OTel javaagent가 `tainted-spring`의 Kafka 홉에서 trace context를 자동 전파한다(HTTP뿐 아니라 Kafka record header 주입/추출).
   - 참고 반례: Eventuate Tram(Brave)은 자동 전파가 안 돼 전용 `eventuate-tram-spring-cloud-sleuth-tram-starter`가 필요했다(legacy-tram R1에서 확인). "자동 전파"를 당연시하지 않는다.
-  - 거짓이면: Kafka 경계용 명시 전파(인터셉터/헤더)로 폴백.
-- **GA-3 (classloader & 설치 순서):** (a) pjacoco(bootstrap/agent classloader)가 app classloader의 `brave.*`/`io.opentelemetry.*`를 thread context classloader 경유로 reflective 접근할 수 있고 `CoverageContext`를 OTel extension classloader에서 도달 가능하게 만들 수 있다(공유 부모/시스템 classloader). (b) 두 agent(pjacoco·OTel javaagent)의 ByteBuddy advice 및 premain/Sleuth auto-config 설치 순서를 choke-point read 폴백이 의존하는 형태로 보장하거나 감지할 수 있다.
-  - 거짓이면: extension 패키징/공유 classloader 재설계, 또는 폴백 경로 축소.
+  - 거짓이면: Kafka 경계용 명시 전파(인터셉터/헤더)로 폴백. (C3 게이트 — C1 범위 밖, C3 plan에서 검증.)
 
 ---
 

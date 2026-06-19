@@ -344,7 +344,11 @@ void resolveNullWhenAllEmpty() {
 ### Task 10: TraceScopeBridge (async 핸드오프 전파) — GA-1 결과로 메커니즘 확정
 **REQ-IDs:** REQ-006, REQ-009
 
-> ⚠️ **GA-1(Task 1/2) 결과가 이 task의 주입 메커니즘을 확정한다.** 아래는 design §5.2가 명명한 1순위(OTel=ContextStorageProvider extension, Brave=scope 메서드 ByteBuddy weave). spike가 거짓이면 이 task를 폴백(REQ-024) 기준으로 재작성하고 명세를 역전파한다.
+> ✅ **GA-1/GA-3 spike 결과로 메커니즘 확정(green 입증, `ga-spike-results.md`):**
+> - **Brave** = `ThreadLocalCurrentTraceContext`의 `newScope/maybeScope`(ENTER) + `Scope.close()`(EXIT) ByteBuddy weave, scope identity로 페어링, `traceIdString()` 리플렉션 호출.
+> - **OTel** = shaded `ContextStorage.attach()`(OTel 2.11.0 bootstrap-loaded) weave. **필수:** 커스텀 `PoolStrategy` + OTel jar `ClassFileLocator.ForJarFile`(shaded supertype 해소), trace-id는 **public shaded `Span`/`SpanContext` 인터페이스**로 호출(concrete `SdkSpan` non-public), `hasSuperType(named(...shaded...ContextStorage))` matcher + OTel 버전별 shaded prefix 핀, `RedefinitionStrategy.RETRANSFORMATION`.
+> - **공유 `CoverageContext`는 bootstrap classloader 배치**(GA-3). 2-agent CLI 순서 무관.
+> - scope→key(이전 store) 맵/핸들은 **weak/identity**로 누수 방지. 스파이크 코드(`spike/`의 `BraveScope*`, `OtelWeave*`)를 참조 구현으로 활용.
 
 **Files:**
 - Create: `agent/src/main/java/io/pjacoco/agent/trace/TraceScopeBridge.java`
