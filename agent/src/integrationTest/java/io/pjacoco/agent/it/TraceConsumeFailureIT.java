@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -141,36 +142,37 @@ class TraceConsumeFailureIT {
     }
 
     // -----------------------------------------------------------------------
-    // Scenario 2 — throwing registry inside TraceScopeBridge.enter() is swallowed
+    // Scenario 2 — null-store path: unregistered key on strict registry is handled gracefully
     // -----------------------------------------------------------------------
 
     /**
-     * REQ-003 (weave/bridge path): the scope-identity API of {@link TraceScopeBridge}
-     * ({@link TraceScopeBridge#onScopeEnter} / {@link TraceScopeBridge#onScopeExit}) MUST NOT
-     * propagate any exception even when the registry has no store for the key (null-store
-     * path that would normally cause a no-op entry) or when {@code null} keys are passed.
+     * REQ-003 (weave/bridge path, null-store variant): the scope-identity API of
+     * {@link TraceScopeBridge} ({@link TraceScopeBridge#onScopeEnter} /
+     * {@link TraceScopeBridge#onScopeExit}) MUST NOT propagate any exception and MUST leave
+     * {@link CoverageContext} unchanged when {@code forCoverageKey} returns {@code null} —
+     * i.e. when an unregistered key is passed to a strict registry ({@code traceKeyAutoCreate=false}).
+     *
+     * <p>This exercises the <em>null-store path</em>: the registry's {@code active(key)} lookup
+     * finds no store for the key and returns {@code null} from {@code forCoverageKey}; the
+     * internal {@code enter()} call in {@code onScopeEnter} must handle this gracefully (context
+     * left unchanged, no exception). A {@code null} key path (documented no-op) is also verified,
+     * as is {@code onScopeExit} with an unknown or {@code null} scope id.
+     *
+     * <p>Note: this test does NOT exercise the bridge's {@code catch(Throwable)} path for a
+     * <em>throwing</em> registry or source — that is a distinct code path. The genuine
+     * throwing-registry/throwing-source swallow path is covered at the unit level by
+     * {@code TraceScopeBridgeTest#enterResolvedDoesNotThrowWhenSourceThrows}; this IT focuses
+     * on the integration-classpath null-store path (Brave on classpath, ByteBuddy present).
      *
      * <p>Fault-injection approach: {@code TraceScope} is package-private in
      * {@code io.pjacoco.agent.trace}, so the IT cannot directly call {@code bridge.enter()} /
-     * {@code bridge.exit()} (which return/accept {@code TraceScope}). Instead we exercise the
-     * woven-advice-facing API ({@code onScopeEnter} / {@code onScopeExit}), which has no visible
-     * return type and is the actual production entry-point from the woven byte-buddy advice.
-     * This is the higher-fidelity test anyway — it is exactly what the production Brave/OTel
-     * weave calls.
-     *
-     * <p>The registry is configured with {@code traceKeyAutoCreate=false} and no store started for
-     * the test key, so {@code forCoverageKey("unknown-key")} returns {@code null} — the internal
-     * {@code enter()} call in {@code onScopeEnter} must handle this gracefully (context left
-     * unchanged, no exception). A {@code null} key path (documented no-op) is also verified.
-     *
-     * <p>The existing unit test {@code TraceScopeBridgeTest#enterResolvedDoesNotThrowWhenSourceThrows}
-     * and {@code TraceScopeBridgeTest#nullKeyEnterExitRestoresPrevious} directly cover the
-     * {@code enter()} / {@code exit()} paths; this IT verifies the same contract survives into
-     * the integration classpath (with Brave on the classpath and ByteBuddy present).
+     * {@code bridge.exit()}. Instead we exercise the woven-advice-facing API
+     * ({@code onScopeEnter} / {@code onScopeExit}), which is the actual production entry-point
+     * from the woven byte-buddy advice — the highest-fidelity path available at this level.
      */
     @Test
-    @DisplayName("REQ-003: TraceScopeBridge scope-identity API (onScopeEnter/Exit) never throws under fault injection")
-    void throwingScopeHookIsSwallowedByBridge(@TempDir Path dir) {
+    @DisplayName("REQ-003: TraceScopeBridge scope-identity API (onScopeEnter/Exit) handles null store gracefully (no exception)")
+    void nullStoreScopeHookIsHandledGracefully(@TempDir Path dir) {
         // Registry with traceKeyAutoCreate=false: forCoverageKey("unknown") returns null.
         // This causes enter() to skip the store lookup — context is unchanged but no exception.
         TestStoreRegistry registry = new TestStoreRegistry(
@@ -247,7 +249,7 @@ class TraceConsumeFailureIT {
         // Hostile Instrumentation: addTransformer throws, simulating an install failure.
         Instrumentation hostile = mock(Instrumentation.class);
         doThrow(new RuntimeException("simulated install failure — fault injection"))
-                .when(hostile).addTransformer(any(ClassFileTransformer.class), any(boolean.class));
+                .when(hostile).addTransformer(any(ClassFileTransformer.class), anyBoolean());
 
         // install() MUST NOT propagate the exception (REQ-003).
         assertDoesNotThrow(() -> activator.install(hostile),
