@@ -267,7 +267,7 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 ```
 coverage/
   T1.exec        # vanilla JaCoCo format (jacococli/Sonar/TIA as-is)
-  T1.json        # sidecar: testId, result, classCount, retryCount, shardId, status, durationMs, …
+  T1.json        # sidecar: testId, result, classCount, retryCount, shardId, status, durationMs, incompleteAttribution/droppedProbes/attribution (on loss), …
   manifest.json  # global header: schemaVersion, jacocoVersion, commitSha, precision (once, at premain)
 ```
 
