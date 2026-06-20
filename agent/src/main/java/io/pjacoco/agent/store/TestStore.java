@@ -3,6 +3,7 @@ package io.pjacoco.agent.store;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Per-testId accumulated coverage: classId -&gt; ClassProbes (jacoco probe scheme). */
 public final class TestStore {
@@ -14,6 +15,8 @@ public final class TestStore {
     private final ConcurrentHashMap<Long, ClassProbes> byClass = new ConcurrentHashMap<Long, ClassProbes>();
     private long writes;                      // plain long: clock-free hot-path activity signal
     private volatile long lastActivityMillis; // reaper-written, enforceCap-read; init = startedAtMillis
+    private final AtomicLong droppedProbes = new AtomicLong();   // probes lost on no-context threads, attributed here
+    private volatile boolean attributionConservative;            // true if any drop was attributed under concurrency
 
     public TestStore(String testId, long startedAtMillis, String shardId) {
         this.testId = testId;
@@ -55,4 +58,10 @@ public final class TestStore {
     public long writes() { return writes; }
     public long lastActivityMillis() { return lastActivityMillis; }
     public void lastActivityMillis(long millis) { this.lastActivityMillis = millis; }
+
+    /** Called by DropAttributor when a no-context probe is attributed to this active store. */
+    public void recordDrop() { droppedProbes.incrementAndGet(); }
+    public void markConservative() { attributionConservative = true; }
+    public long droppedProbes() { return droppedProbes.get(); }
+    public boolean attributionConservative() { return attributionConservative; }
 }
