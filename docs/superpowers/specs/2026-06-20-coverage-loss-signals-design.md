@@ -1,6 +1,14 @@
 # 설계: in-process per-test 귀속 손실의 가시화 (coverage-loss signals) — phase 1 (pjacoco)
 
-상태: 리뷰용 초안 (3-벤더 design-doc 리뷰 반영 rev1)
+> **개정 (2026-06-20, 필드 피드백 P2-4):** **CLS-REQ-005 개정 + CLS-REQ-009 신규.** 원안의 "병렬(동시
+> active ≥2) 드롭 → 모든 active test에 `attribution="conservative"` 표기"는 앱 **배경 스레드**가 동시
+> 테스트 전부를 오표기해 게이트를 막았다. → **모호한 드롭은 per-test 무표기 + 전역 `ambiguousDrops`
+> 메트릭으로만 집계**(정확히 1개 active일 때만 exact 귀속). 또한 단일 active의 미세 노이즈를 위한
+> 옵트인 임계 `incompleteAttributionThreshold`(CLS-REQ-009)와 사이드카 `recordedProbes`를 추가했다.
+> 아래 본문의 `conservative` 서술은 **개정 전 기록**이며, 권위 정의는
+> `docs/superpowers/requirements/2026-06-20-coverage-loss-signals-requirements.md`(CLS-REQ-005/009)다.
+
+상태: 리뷰용 초안 (3-벤더 design-doc 리뷰 반영 rev1; P2-4 개정 2026-06-20)
 작성일: 2026-06-20
 브랜치: `feat-coverage-loss-signals`
 대상 repo: pjacoco (parallel-per-test-coverage)
@@ -58,7 +66,8 @@
   DATA: 드롭 시 active in-process store(들)에 직접 누적(TestStore.droppedProbes) → flush가 sidecar로 직렬화
         └ shutdown: Metrics.summary()에 missingTestIdInbound/droppedNoContext/unattributedDrops 누계 1줄
         ▼ (계약 = 산출물 contract; 신규 필드는 조건부·additive)
-  <testId>.json sidecar:  { "result": ..., "incompleteAttribution": true, "droppedProbes": N, "attribution": "exact|conservative" }
+  <testId>.json sidecar:  { "result": ..., "droppedProbes": N, "recordedProbes": M, "incompleteAttribution": true, "attribution": "exact" }
+  (개정 P2-4: ambiguous 병렬 드롭은 per-test 무표기 → attribution은 항상 "exact"; incompleteAttribution은 ratio>threshold일 때만)
         ▼
 [phase 2 — TIA tia convert]  이 필드를 testwise.json tests[]로 승격 → index → tia.db (phase 2 범위)
 ```

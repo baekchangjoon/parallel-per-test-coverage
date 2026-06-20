@@ -48,6 +48,14 @@ public final class AgentOptions {
     public int controlPort()    { return Integer.parseInt(get("port", "6310")); }
     public int maxStores()      { return Integer.parseInt(get("maxstores", "1000")); }
     public String commitSha()   { return raw.get("commitSha"); }
+    /** Drop-ratio threshold above which a test's sidecar is flagged {@code incompleteAttribution} (CLS-REQ-009).
+     *  ratio = droppedProbes / (droppedProbes + recordedProbes). Default 0.0 = flag on any attributed drop
+     *  (backward-compatible); raise it (e.g. 0.05) to suppress minor background-thread noise on the
+     *  single-active-test path. Clamped to [0,1]. */
+    public double incompleteAttributionThreshold() {
+        double t = Double.parseDouble(get("incompleteAttributionThreshold", "0.0"));
+        return t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+    }
 
     /** Whether to dump the whole-run aggregate {@code .exec} at shutdown. Default true. */
     public boolean aggregate() { return Boolean.parseBoolean(get("aggregate", "true")); }

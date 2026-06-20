@@ -25,6 +25,10 @@ public final class Metrics {
     public final AtomicLong droppedNoContext = new AtomicLong();
     /** Subset of droppedNoContext where no in-process test store was active → not attributable to any test. */
     public final AtomicLong unattributedDrops = new AtomicLong();
+    /** Subset of droppedNoContext where ≥2 tests were concurrently active → ambiguous, not attributed to any
+     *  one test (CLS-REQ-005, revised): a context-less drop can't be blamed on one of several parallel tests
+     *  without trace context, so it is counted globally here instead of per-test over-flagging. */
+    public final AtomicLong ambiguousDrops = new AtomicLong();
 
     public String summary() {
         return "[pjacoco] summary: completed=" + testsCompleted.get()
@@ -38,6 +42,7 @@ public final class Metrics {
                 + " evictedInFlight=" + evictedInFlightTraces.get()
                 + " missingTestIdInbound=" + missingTestIdInbound.get()
                 + " droppedNoContext=" + droppedNoContext.get()
-                + " unattributedDrops=" + unattributedDrops.get();
+                + " unattributedDrops=" + unattributedDrops.get()
+                + " ambiguousDrops=" + ambiguousDrops.get();
     }
 }

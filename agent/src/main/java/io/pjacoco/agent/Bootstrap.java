@@ -61,7 +61,7 @@ public final class Bootstrap {
             public long getAsLong() { return System.currentTimeMillis(); }
         };
         final TestStoreRegistry registry = new TestStoreRegistry(
-                outDir, new ExecWriter(), metrics, log,
+                outDir, new ExecWriter(options.incompleteAttributionThreshold()), metrics, log,
                 options.autoRegister(), options.maxStores(), clockSupplier,
                 options.traceKeyAutoCreate(), options.inFlightGuardMillis());
 

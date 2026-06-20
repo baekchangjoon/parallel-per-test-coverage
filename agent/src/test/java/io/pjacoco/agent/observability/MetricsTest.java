@@ -22,11 +22,13 @@ class MetricsTest {
         m.swallowedExceptions.incrementAndGet();
         m.rejectedUnregistered.incrementAndGet();
         m.partialDumps.incrementAndGet();
+        m.ambiguousDrops.incrementAndGet();
         String s = m.summary();
         assertTrue(s.contains("completed=2"), s);
         assertTrue(s.contains("partial=1"), s);
         assertTrue(s.contains("swallowed=1"), s);
         assertTrue(s.contains("rejected=1"), s);
+        assertTrue(s.contains("ambiguousDrops=1"), s);   // CLS-REQ-005/007: global ambiguous-drop visibility
     }
 
     // REQ-019: scopeHookInjectionFailures counter starts at 0 and is incrementable

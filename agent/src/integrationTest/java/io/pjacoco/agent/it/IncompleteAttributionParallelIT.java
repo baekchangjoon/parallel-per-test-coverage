@@ -1,6 +1,6 @@
 package io.pjacoco.agent.it;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.pjacoco.agent.context.CoverageContext;
 import io.pjacoco.agent.observability.AgentLog;
@@ -26,8 +26,8 @@ class IncompleteAttributionParallelIT {
     }
 
     @Test
-    @DisplayName("CLS-REQ-005: drop while >=2 stores active -> all flagged conservative, no loss")
-    void concurrentDrops_flaggedConservative_noLoss(@TempDir Path dir) {
+    @DisplayName("CLS-REQ-005: drop while >=2 stores active -> NOT per-test flagged, counted ambiguous")
+    void concurrentDrops_notPerTestFlagged_countedAmbiguous(@TempDir Path dir) {
         Metrics m = new Metrics();
         final AtomicLong clock = new AtomicLong(1L);
         TestStoreRegistry registry = new TestStoreRegistry(dir, new ExecWriter(), m, new AgentLog(),
@@ -40,9 +40,11 @@ class IncompleteAttributionParallelIT {
         CoverageContext.clear();                      // this thread has no context -> drop
         CoverageBridge.recordCoverage(String.class, 1L, 0);
 
-        assertTrue(registry.peek("A").droppedProbes() >= 1 && registry.peek("A").attributionConservative(),
-                "A must be flagged conservative");
-        assertTrue(registry.peek("B").droppedProbes() >= 1 && registry.peek("B").attributionConservative(),
-                "B must be flagged conservative");
+        // Revised P2-4: an ambiguous drop (≥2 active) is NOT blamed on any one test...
+        assertEquals(0L, registry.peek("A").droppedProbes(), "ambiguous drop must not be attributed to A");
+        assertEquals(0L, registry.peek("B").droppedProbes(), "ambiguous drop must not be attributed to B");
+        // ...but the loss is still visible globally (no silent loss).
+        assertEquals(1L, m.droppedNoContext.get(), "global no-context drop counter still increments");
+        assertEquals(1L, m.ambiguousDrops.get(), "the drop is counted as ambiguous (≥2 active)");
     }
 }

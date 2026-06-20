@@ -1,5 +1,13 @@
 # Coverage-Loss Signals (phase 1, pjacoco) Implementation Plan
 
+> **개정 (2026-06-20, 필드 피드백 P2-4):** 아래 본문의 **`conservative` 귀속**(`n>1 → markConservative`,
+> `attributionConservative()`, sidecar `attribution:"conservative"`)은 **개정 전 기록**이며 더 이상
+> 유효하지 않다. 개정 후: 모호한(동시 active ≥2) 드롭은 per-test 무표기 + 전역 `Metrics.ambiguousDrops`
+> 로만 집계(정확히 1개 active일 때만 exact 귀속), 옵트인 임계 `incompleteAttributionThreshold`
+> (CLS-REQ-009) 추가, `markConservative`/`attributionConservative`는 제거됨. 권위 정의는
+> `docs/superpowers/requirements/2026-06-20-coverage-loss-signals-requirements.md`(CLS-REQ-005 개정 /
+> CLS-REQ-009 신규)다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** in-process per-test 수집에서 워커/비-테스트 스레드로 새는 커버리지 손실을 런타임 카운터·1회성 WARN·per-test sidecar 플래그로 가시화한다(손실을 *고치는* 게 아니라 *보이게* 한다).

@@ -69,18 +69,39 @@
     없음(기존 동작 보존).
 - 검증 레벨: integration
 
-### CLS-REQ-005 — per-test 데이터 플래그 (병렬, 보수 귀속)
+### CLS-REQ-005 — 모호(병렬) 드롭은 전역 집계, per-test 오표기 금지 [개정 2026-06-20]
 - 유형: Functional
-- 우선순위: Must (사용자 지시: 병렬 포함)
-- 설명: in-JVM 병렬 수집에서 드롭 시점에 동시 active test가 여럿이면, 손실을 누락 없이 표기하되 귀속
-  모호를 보수적으로 처리한다.
+- 우선순위: Must
+- **개정 근거(필드 피드백 P2-4):** 원안은 동시 active test가 ≥2일 때 드롭을 **모든** active test에
+  `attribution="conservative"`로 표기했다. 실측에서 앱 **배경 스레드**(스케줄러·풀)가 계측 코드를
+  실행하면 그 드롭이 무관한 동시 테스트 전부를 오표기 → 게이트가 false-positive로 막혀 `--allow-incomplete`
+  상시 필요. 트레이스 context 없이는 그 드롭이 어느 테스트의 async인지 알 수 없으므로 "전부에 책임 전가"는
+  정확성도 약하다. → **모호한 드롭은 per-test로 표기하지 않고 전역 메트릭으로만 집계**한다.
+- 설명: 드롭 시점 동시 active test가 **정확히 1개면 그 store에 exact 귀속**(CLS-REQ-004 유지). **2개
+  이상(모호)이면 어느 test에도 per-test 표기를 하지 않고** 전역 `Metrics.ambiguousDrops`로만 집계한다
+  (손실은 `droppedNoContext` + `ambiguousDrops`로 가시화되며 사라지지 않음).
 - 수용기준:
   - Given in-JVM 병렬 in-process(동시 active test ≥2), When 컨텍스트 없는 스레드에서 드롭 발생, Then
-    드롭 시점 동시 active test들의 sidecar가 `incompleteAttribution=true`, `attribution="conservative"`,
-    `droppedProbes>0`(store별 누적 상한)으로 표기되고, 어떤 손실도 무표기로 사라지지 않는다.
-- 검증 레벨: integration (신규 `IncompleteAttributionParallelIT` — ByteBuddy + 동시 active store + 워커
-  드롭. `PjacocoInProcessFunctionalTest`는 테스트 스레드 직접 호출이라 워커 드롭 시나리오가 없어 채택
-  안 함 — 리뷰 확정.)
+    어떤 active test의 sidecar에도 `incompleteAttribution`이 추가되지 않고, `Metrics.ambiguousDrops`가
+    증가한다(전역 손실 가시화 유지).
+  - Given 동시 active test가 정확히 1개, When 드롭 발생, Then 그 store에만 exact 귀속된다(CLS-REQ-004·009).
+- 검증 레벨: integration (`IncompleteAttributionParallelIT` 개정 — 동시 active store + 워커 드롭 →
+  per-test 무표기 + `ambiguousDrops` 증가 단언)
+
+### CLS-REQ-009 — 드롭 비율 임계로 미세 노이즈 억제 (옵트인) [신규 2026-06-20]
+- 유형: Functional
+- 우선순위: Should
+- 설명: exact 귀속(동시 active 1개) 경로에서도, 단일 배경-스레드 드롭이 소수면 그 한 테스트가 오표기될
+  수 있다. 에이전트 옵션 `incompleteAttributionThreshold`(0.0~1.0, 기본 0.0)를 두어, **드롭 비율 =
+  droppedProbes / (droppedProbes + recordedProbes)** 가 임계를 **초과할 때만** `incompleteAttribution=true`
+  를 설정한다. 기본 0.0이면 드롭이 있는 한 표기(현행 보존). 사이드카는 가시화를 위해 `droppedProbes`와
+  `recordedProbes`(분모)를 항상 함께 노출한다.
+- 수용기준:
+  - Given `incompleteAttributionThreshold=0.0`(기본), When droppedProbes>0인 store sidecar 생성, Then
+    `incompleteAttribution=true`(현행 보존).
+  - Given 임계 X>0, When 드롭 비율 ≤ X, Then `incompleteAttribution`이 설정되지 않고(미표기) `droppedProbes`·
+    `recordedProbes`는 사이드카에 노출된다. When 비율 > X, Then `incompleteAttribution=true`.
+- 검증 레벨: unit/integration (`ExecWriter` 임계 분기 + sidecar 필드)
 
 ### CLS-REQ-006 — 오탐 0 (in-thread/MockMvc는 무신호)
 - 유형: Non-functional
@@ -133,7 +154,8 @@
 | CLS-REQ-002 | 무컨텍스트 드롭 카운트 + active==0 미귀속 분류 | `OrphanProbeCounterIT#noContextThread_incrementsDroppedNoContext` (active==0 미귀속·active>0 귀속 모두 단언) | integration | 🟢 green |
 | CLS-REQ-003 | servlet 아닌 cross-thread 손실 포착 | `CrossThreadDropIT#asyncWorker_incrementsDroppedNoContext` | integration | 🟢 green |
 | CLS-REQ-004 | per-test 플래그(직렬, classCount=0, race-safe) | `IncompleteAttributionSerialIT#workerOnlyTest_flaggedExact_notDiscarded` · `#trulyEmpty_discarded` | integration | 🟢 green |
-| CLS-REQ-005 | per-test 플래그(병렬, conservative) | `IncompleteAttributionParallelIT#concurrentDrops_flaggedConservative_noLoss` | integration | 🟢 green |
+| CLS-REQ-005 | 모호(병렬) 드롭 전역 집계, per-test 오표기 금지 [개정] | `IncompleteAttributionParallelIT#concurrentDrops_notPerTestFlagged_countedAmbiguous` | integration | 🟢 green |
+| CLS-REQ-009 | 드롭 비율 임계로 미세 노이즈 억제(옵트인) [신규] | `ExecWriterThresholdTest#{belowThreshold_notFlagged, aboveThreshold_flagged, defaultZero_flagsAnyDrop}` | unit | 🟢 green |
 | CLS-REQ-006 | 오탐 0(in-thread/MockMvc surrogate 무신호) | `NoFalsePositiveInThreadIT#directCall_noSignal` · `#contextSetServletDispatch_noSignal` | integration | 🟢 green |
 | CLS-REQ-007 | shutdown summary 카운터 노출 | `MetricsTest#summary_includesLossCounters` (확장, 값 단언) | unit | 🟢 green |
 | CLS-REQ-008 | 회귀 무손상 & sidecar 후방호환 | `ExecWriterTest#noDrop_omitsAttributionFields` · `#withDrop_emitsAttributionFields` + `:agent:e2eTest`/`e2eJakartaTest`/`e2eCondyTest` green | e2e + integration | 🟢 green |
