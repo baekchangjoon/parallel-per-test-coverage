@@ -72,9 +72,12 @@
 `activate(request)`에서 트레이서·baggage 모두로 `key`를 못 풀면(`key == null`) 워커 스레드 프로브가
 드롭된다. 단, **MockMvc/MOCK servlet 디스패치는 테스트 스레드에서 돌며 이미 `CoverageContext`가
 set 돼 있다**(InProcessExtension이 beforeEach에 set). 따라서 오탐을 막기 위해:
-- 조건: `key == null` **AND `CoverageContext.get() == null`** (이 스레드에 활성 컨텍스트가 없을 때만).
+- 조건: `key == null` **AND `CoverageContext.get() == null`** (이 스레드에 활성 컨텍스트가 없을 때)
+  **AND 레지스트리에 active store가 존재**(수집 윈도우 내).
   → MockMvc(테스트 스레드, 컨텍스트 있음)는 카운트/경고 안 됨(R6 보장). RANDOM_PORT 워커 스레드
-  (컨텍스트 없음)만 잡힘.
+  (컨텍스트 없음)만 잡힘. **active store 게이트**로 테스트 시작 전 startup 헬스체크/인프라 요청의
+  노이즈를 제거한다 — in-process HTTP 오용(그 in-process test가 active)·out-of-process baggage 깨짐
+  (그 test가 control-plane start로 등록돼 active) 둘 다 수집 윈도우 안이라 여전히 잡힌다.
 - 동작: `Metrics.missingTestIdInbound`(신규 AtomicLong) 증가 + **JVM당 1회 WARN**.
   - 정확히-1회: `ServletAdvice`에 `static final AtomicBoolean MISSING_ID_WARNED`를 두고
     `compareAndSet(false,true)` 성공 시에만 로그(volatile boolean 아님 — race-safe).
@@ -131,16 +134,25 @@ if (store == null) {
   중복 계상될 수 있는 **상한 추정**임을 phase 2/문서가 인지).
 
 ### 빈-store 가드 수정 — `agent/.../api/CoverageControl.deactivate` (리뷰 I1, 모든 벤더)
-현재: `if (store != null && store.classCount() == 0) reg.discard(testId);` → 테스트 스레드가 한 줄도
-계측 안 됐고(=워커 스레드에만 커버리지) **드롭만 있는** R4 케이스가 flush 없이 버려져 sidecar가 안
-써진다 → 침묵 손실. 수정:
+현재: `CoverageControl.deactivate`가 `if (store != null && store.classCount() == 0) reg.discard(testId);` →
+테스트 스레드가 한 줄도 계측 안 됐고(=워커 스레드에만 커버리지) **드롭만 있는** R4 케이스가 flush 없이
+버려져 sidecar가 안 써진다 → 침묵 손실.
+
+**check-then-act race 회피(리뷰 Gemini)**: `CoverageControl.deactivate`에서 `peek`+분기하면 그 사이
+워커 `attribute()`가 `droppedProbes`를 올려 폐기 결정과 어긋날 수 있다. 그래서 결정을 **`TestStoreRegistry`의
+synchronized 메서드로 이관**한다(start/stop과 동일 락):
 ```java
-if (store != null && store.classCount() == 0 && store.droppedProbes() == 0) {
-    reg.discard(testId);                 // 진짜 빈 store만 폐기
-} else {
-    reg.stop(testId, result);            // 드롭 신호가 있으면 flush(빈 .exec + 플래그 sidecar)
+// CoverageControl.deactivate: CoverageContext.clear(); reg.stopUnlessEmpty(testId, result);
+// TestStoreRegistry (synchronized):
+synchronized void stopUnlessEmpty(String testId, String result) {
+    TestStore s = stores.remove(testId);                 // 락 안에서 제거 후 재read
+    if (s == null) return;
+    if (s.classCount() == 0 && s.droppedProbes() == 0) return;  // 진짜 빈 store만 폐기(flush 안 함)
+    flush(s, result, "complete");                        // 드롭 신호 있으면 flush(빈 .exec + 플래그)
 }
 ```
+제거 후 같은 락 안에서 `droppedProbes`를 재read하므로, 락을 잡는 경로의 누락은 없다(락 밖 워커의
+극히 늦은 증가는 §7 late-write 윈도우로 수용 — 플래그 자체는 1개라도 증가했으면 유지).
 `ExecWriter`/`tia convert`는 빈 `.exec`(0 커버 라인)를 이미 허용한다(phase 2의 `--fail-on-empty`가
 이 케이스를 잡는다).
 
@@ -185,8 +197,9 @@ if (store != null && store.classCount() == 0 && store.droppedProbes() == 0) {
 6. **R6 오탐 0(음성)** [IT]: 프로덕션 코드가 **테스트 스레드에서** 실행(직접 호출 / MockMvc·MOCK
    servlet 디스패치 — 컨텍스트 set 상태) → `missingTestIdInbound=0`, `droppedNoContext=0`, 어떤
    sidecar에도 `incompleteAttribution` 없음.
-7. **R7 회귀 무손상** [전체]: 기존 out-of-process baggage `:agent:e2eTest`·in-process 단위 수집·
-   `ExecWriterTest` green, 산출물 포맷 후방호환(기존 소비자가 새 필드 무시해도 동작). **`MetricsTest`는
+7. **R7 회귀 무손상** [전체]: 기존 out-of-process baggage `:agent:e2eTest`·**`:agent:e2eJakartaTest`·
+   `:agent:e2eCondyTest`**(CI 동등)·in-process 단위 수집·`ExecWriterTest` green, 산출물 포맷 후방호환
+   (기존 소비자가 새 필드 무시해도 동작). **`MetricsTest`는
    신규 카운터(`missingTestIdInbound=`/`droppedNoContext=`/`unattributedDrops=`) 단언으로 확장**한다 —
    기존 contains-check는 오타를 못 잡으므로 명시 단언 필요(리뷰 I5).
 
@@ -197,11 +210,11 @@ if (store != null && store.classCount() == 0 && store.droppedProbes() == 0) {
 | `observability/Metrics` | `missingTestIdInbound`·`droppedNoContext`·`unattributedDrops` 추가; `summary()` 노출 |
 | `probe/CoverageBridge` | `store==null` 분기 `droppedNoContext++` + `attributor.attribute()`; `bindAttributor` static |
 | (신규) `probe/DropAttributor` | `TestStoreRegistry` 참조 보유, `activeSnapshot()` 귀속(size 1=exact / >1=conservative / 0=unattributed) |
-| `inbound/servlet/ServletAdvice` | `key==null && context==null` 게이트 → `missingTestIdInbound++` + 1회 WARN(AtomicBoolean); `static AgentLog log` |
+| `inbound/servlet/ServletAdvice` | `key==null && context==null && active store 존재` 게이트 → `missingTestIdInbound++` + 1회 WARN(AtomicBoolean); `static AgentLog log` |
 | `inbound/servlet/ServletInboundActivator` | `ServletAdvice.log` 바인드 |
-| `api/CoverageControl` | `deactivate` 빈-store 가드에 `&& droppedProbes()==0` (드롭 있으면 flush) |
+| `api/CoverageControl` | `deactivate`가 `reg.stopUnlessEmpty(testId, result)` 위임(빈-store 분기 제거) |
 | `store/TestStore` | `AtomicLong droppedProbes` + `volatile boolean attributionConservative` + setter/getter (3-인자 생성자 유지) |
-| `store/TestStoreRegistry` | 신규 public `Collection<TestStore> activeSnapshot()` (`new ArrayList<>(stores.values())`) |
+| `store/TestStoreRegistry` | 신규 synchronized `stopUnlessEmpty(testId,result)`(락 안 재read 폐기/flush); public `Collection<TestStore> activeSnapshot()`·`boolean hasActive()` |
 | `agent/Bootstrap` | `premain`에서 `bindMetrics` 직후·`ProbeInstrumentation.install` 직전 `bindAttributor(new DropAttributor(registry))` |
 | `output/Json` | `put(String, boolean)` 오버로드 |
 | `output/ExecWriter` | sidecar에 `incompleteAttribution`/`droppedProbes`/`attribution`(store에서 읽어 조건부 emit) |
