@@ -258,7 +258,10 @@ java -cp <pjacoco-agent.jar> io.pjacoco.agent.output.TraceMergeMain \
 - `--shared <dir>`: 하위 디렉터리(`/shared/<service>/`)를 서비스로 발견해 `--drain-wait-ms`(기본 15000ms)만큼 비동기 다운스트림(Tram/CDC/Kafka) flush를 기다린 뒤 수집합니다. 명시 입력은 `--service-dir <name>=<dir>`(반복; drain-wait 없이 즉시).
 - 결과: `report/<service>/<testId>.exec` — **서비스별·testId별** 병합 커버리지(서비스 디렉터리 분리로 JaCoCo classId 충돌 회피). 미등록 traceId는 raw traceId를 testId로 폴백합니다.
 - 분산 실행 시 각 서비스의 reaper idle 임계를 drain-wait보다 짧게(예: `traceIdleFlushMillis=5000`) 두어 수집 시점에 `.exec`가 준비되도록 하세요.
-- **실증 E2E:** [`agent/e2e/legacy-tram-distributed-coverage.sh`](agent/e2e/legacy-tram-distributed-coverage.sh)가 legacy-tram Brave 3-서비스 스택(order-web→reservation→Kafka/CDC→ledger)에서 이 전체 흐름을 end-to-end로 검증하며, downstream ledger 서비스(Kafka/CDC async)의 커버리지가 동일 testId로 귀속됨을 실측합니다(order-web classCount=6, reservation=6, ledger=2).
+- **실증 E2E (양 트레이서 벡터, 2026-06-20 live):**
+  - **Brave** — [`agent/e2e/legacy-tram-distributed-coverage.sh`](agent/e2e/legacy-tram-distributed-coverage.sh): legacy-tram 3-서비스(order-web→reservation→Kafka/CDC→ledger). downstream ledger(Kafka/CDC async) 커버리지가 동일 testId로 귀속(classCount 6/6/2).
+  - **OpenTelemetry** — [`agent/e2e/tainted-spring-distributed-coverage.sh`](agent/e2e/tainted-spring-distributed-coverage.sh): tainted-spring(diary→Kafka `diary.created`→mindgraph `DiaryCreatedConsumer`, 별도 JVM). OTel javaagent 2.11.0 + pjacoco 이중 주입, W3C `traceparent` 전파. downstream mindgraph(Kafka consumer) 커버리지가 동일 testId로 귀속(842B/1072B).
+  - 두 스크립트는 `assumeTrue`(Docker + 환경 경로) 게이트의 JUnit `{LegacyTram,TaintedSpring}DistributedE2E`로도 실행되며, 환경 부재 시 skip됩니다.
 
 ## 에이전트 직접 사용 (저수준)
 
