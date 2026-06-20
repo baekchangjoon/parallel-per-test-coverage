@@ -15,10 +15,13 @@ The build produces these artifacts (single lockstep SemVer; bump with `-Prelease
 ## Local validation (no credentials — this is what CI runs on every PR)
 
 ```bash
-# 1) Libraries + agent (shaded) to your local Maven repo
+# 1) Libraries + agent (shaded) + Gradle plugin to your local Maven repo
+#    (:gradle-plugin:publishToMavenLocal is required for the gradle-sample consumer to resolve the
+#     io.pjacoco.gradle plugin id from mavenLocal — see ci.yml "gradle-sample" job)
 ./gradlew :agent:publishToMavenLocal \
   :testkit-core:publishToMavenLocal :testkit-junit5:publishToMavenLocal \
-  :testkit-junit4:publishToMavenLocal :testkit-restassured:publishToMavenLocal
+  :testkit-junit4:publishToMavenLocal :testkit-restassured:publishToMavenLocal \
+  :gradle-plugin:publishToMavenLocal
 
 # 2) Maven plugin (resolves io.pjacoco:pjacoco-agent from step 1)
 mvn -f maven-plugin/pom.xml install
@@ -26,14 +29,25 @@ mvn -f maven-plugin/pom.xml install
 # 3) End-to-end consumers
 mvn -f samples/maven-sample/pom.xml test     # produces target/pjacoco/T1.exec
 ./gradlew :gradle-plugin:test                # the TestKit consumer produces build/pjacoco/T1.exec
+./gradlew -p samples/gradle-sample test      # the gradle-sample consumer (resolves plugin from mavenLocal)
 ```
 
-The POM metadata (MIT license, scm, developers) and GPG signing are already configured; signing is
-**gated** — it activates only when `SIGNING_KEY` is present, so local builds without keys still work.
+The Gradle modules' POM metadata (MIT license, scm, developers) and GPG signing are already configured
+in the root `build.gradle.kts`; signing is **gated** — it activates only when `SIGNING_KEY` is present,
+so local builds without keys still work. NOTE: the standalone `maven-plugin/pom.xml` does **not** yet
+carry the Central-required POM metadata (url/licenses/developers/scm) or `maven-gpg-plugin` — wiring that
+is part of the deferred public-publish work (REQ-D03).
 
-## Public release (credentials-gated)
+## Public release (credentials-gated) — NOT yet wired into `release.yml` (deferred: REQ-D03)
 
-These steps run from the `release` workflow and only execute when the corresponding secrets exist.
+> Status (2026-06-20): `release.yml` currently publishes **only the agent shaded jar** to a GitHub
+> Release. The public-repository upload steps below are **not yet in the workflow** — they are the
+> deferred, credentials-gated follow-up tracked as REQ-D03 in
+> `docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md`. Until then,
+> consume every other module via `publishToMavenLocal` (see "Local validation" above).
+
+Once wired, these steps will run from the `release` workflow and only execute when the corresponding
+secrets exist.
 
 ### Required secrets
 

@@ -62,6 +62,29 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 
 ## 빠른 시작 (권장)
 
+> ⚠️ **먼저 읽으세요 — 현재는 로컬 설치가 필요합니다.** 아티팩트는 아직 Maven Central / Gradle Plugin
+> Portal 에 **공개 배포되지 않았습니다**(공개 배포는 예정된 후속 과제). 따라서 아래 `io.pjacoco:…` /
+> `id("io.pjacoco.gradle")` 좌표를 **그대로 복붙하면 resolve에 실패**합니다 — 버그가 아니라 미배포
+> 상태입니다. 지금은 소스를 클론해 로컬에 설치한 뒤 쓰세요(한 번만):
+>
+> ```bash
+> # 라이브러리 + agent(셰이드) + testkit + Gradle 플러그인 을 로컬 Maven 저장소에 설치
+> ./gradlew :agent:publishToMavenLocal \
+>   :testkit-core:publishToMavenLocal :testkit-junit5:publishToMavenLocal \
+>   :testkit-junit4:publishToMavenLocal :testkit-restassured:publishToMavenLocal \
+>   :gradle-plugin:publishToMavenLocal
+> # Maven 플러그인 (위에서 설치한 agent 를 resolve)
+> mvn -f maven-plugin/pom.xml install
+> ```
+>
+> Gradle 소비자는 `settings.gradle.kts` 의 `pluginManagement { repositories { mavenLocal() } }` 로
+> 플러그인을 mavenLocal 에서 받습니다(예: [`samples/gradle-sample`](samples/gradle-sample)).
+>
+> 그러면 아래 좌표가 `mavenLocal()` 에서 resolve됩니다. 자세한 절차·검증은
+> [`docs/PUBLISHING.md`](docs/PUBLISHING.md), 공개 배포 로드맵은
+> [배포·온보딩 요구사항명세](docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md)
+> (REQ-D03 = 공개 배포 추적) 참고. 공개 배포가 완료되면 이 안내는 제거됩니다.
+
 빌드 **플러그인 + 테스트킷**을 추가하는 방법입니다. 플러그인이 에이전트를 자동으로 받아 `-javaagent`로
 연결하고, 테스트킷이 테스트별 경계(start/stop)와 `baggage: test.id=...` 전파를 담당합니다. 바로 복사해
 돌려볼 수 있는 예제: [`samples/gradle-sample`](samples/gradle-sample) · [`samples/maven-sample`](samples/maven-sample)
@@ -110,7 +133,8 @@ class OwnerBlackBoxIT {
 
 > 아티팩트 이름: 에이전트 `io.pjacoco:pjacoco-agent`, 테스트킷 `io.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
 > Gradle 플러그인 id `io.pjacoco.gradle`, Maven 플러그인 `io.pjacoco:pjacoco-maven-plugin`. 공개 배포(Maven
-> Central / Gradle Plugin Portal)는 준비 중이며, 로컬 검증 방법은 [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
+> Central / Gradle Plugin Portal)는 **아직 미완료**(예정된 후속 과제, REQ-D03) — 지금은 위 안내대로 로컬
+> 설치 후 쓰며, 절차는 [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
 
 ## 인-프로세스 per-test 커버리지 (서블릿 경계 없이)
 
