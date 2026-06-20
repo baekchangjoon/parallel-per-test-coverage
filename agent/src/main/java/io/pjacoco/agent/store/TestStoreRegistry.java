@@ -20,6 +20,7 @@ public final class TestStoreRegistry {
     private final int maxStores;
     private final LongSupplier clock;
     private final boolean traceKeyAutoCreate;
+    private final long inFlightGuardMillis;
     private volatile String commitSha;
 
     private final ConcurrentHashMap<String, TestStore> stores = new ConcurrentHashMap<String, TestStore>();
@@ -33,6 +34,12 @@ public final class TestStoreRegistry {
     public TestStoreRegistry(Path outputDir, ExecWriter writer, Metrics metrics, AgentLog log,
                              boolean lenient, int maxStores, LongSupplier clock,
                              boolean traceKeyAutoCreate) {
+        this(outputDir, writer, metrics, log, lenient, maxStores, clock, traceKeyAutoCreate, 0L);
+    }
+
+    public TestStoreRegistry(Path outputDir, ExecWriter writer, Metrics metrics, AgentLog log,
+                             boolean lenient, int maxStores, LongSupplier clock,
+                             boolean traceKeyAutoCreate, long inFlightGuardMillis) {
         this.outputDir = outputDir;
         this.writer = writer;
         this.metrics = metrics;
@@ -41,6 +48,7 @@ public final class TestStoreRegistry {
         this.maxStores = maxStores;
         this.clock = clock;
         this.traceKeyAutoCreate = traceKeyAutoCreate;
+        this.inFlightGuardMillis = inFlightGuardMillis;
     }
 
     public synchronized void start(String testId, String shardId, String commitSha) {
@@ -145,17 +153,25 @@ public final class TestStoreRegistry {
 
     private void enforceCap() {
         while (stores.size() > maxStores) {
-            String oldest = null;
-            long min = Long.MAX_VALUE;
+            String victim = null; long oldestActivity = Long.MAX_VALUE; long victimStart = Long.MAX_VALUE;
             for (Map.Entry<String, TestStore> e : stores.entrySet()) {
-                if (e.getValue().startedAtMillis() < min) {
-                    min = e.getValue().startedAtMillis();
-                    oldest = e.getKey();
+                long la = e.getValue().lastActivityMillis();
+                long st = e.getValue().startedAtMillis();
+                // idle-first; deterministic tie-break: older lastActivity, then older start, then key
+                if (la < oldestActivity
+                        || (la == oldestActivity && st < victimStart)
+                        || (la == oldestActivity && st == victimStart && (victim == null || e.getKey().compareTo(victim) < 0))) {
+                    oldestActivity = la; victimStart = st; victim = e.getKey();
                 }
             }
-            if (oldest == null) break;
-            TestStore s = stores.remove(oldest);
-            log.warn("cap", "store cap " + maxStores + " exceeded; evicting testId=" + oldest + " as partial");
+            if (victim == null) break;
+            TestStore s = stores.remove(victim);
+            if (inFlightGuardMillis > 0 && clock.getAsLong() - oldestActivity < inFlightGuardMillis) {
+                metrics.evictedInFlightTraces.incrementAndGet();
+                log.warn("cap", "store cap " + maxStores + " forced in-flight eviction key=" + victim);
+            } else {
+                log.warn("cap", "store cap " + maxStores + " exceeded; evicting idle key=" + victim + " as partial");
+            }
             flush(s, null, "partial");
             metrics.partialDumps.incrementAndGet();
         }
