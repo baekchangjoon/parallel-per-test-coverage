@@ -79,4 +79,13 @@ class MetricsTest {
         assertEquals(1L, metrics.scopeHookInjectionFailures.get(),
                 "scopeHookInjectionFailures must be 1 after a failed install");
     }
+
+    // REQ-019: unmappedTraceIds counter starts at 0 and is incrementable
+    @Test
+    void unmappedTraceIdsStartsAtZeroAndCounts() {
+        Metrics m = new Metrics();
+        assertEquals(0L, m.unmappedTraceIds.get());
+        m.unmappedTraceIds.incrementAndGet();
+        assertTrue(m.summary().contains("unmapped=1"));
+    }
 }

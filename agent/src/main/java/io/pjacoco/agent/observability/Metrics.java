@@ -13,6 +13,9 @@ public final class Metrics {
     public final AtomicLong scopeHookInjectionFailures = new AtomicLong();
     /** Incremented when activation falls back from a tracer source to the local/baggage source. */
     public final AtomicLong fallbackActivations = new AtomicLong();
+    /** Incremented when a per-trace store is reported without a registered traceId->testId mapping
+     *  (the raw traceId is used as the testId). */
+    public final AtomicLong unmappedTraceIds = new AtomicLong();
 
     public String summary() {
         return "[pjacoco] summary: completed=" + testsCompleted.get()
@@ -21,6 +24,7 @@ public final class Metrics {
                 + " rejected=" + rejectedUnregistered.get()
                 + " retries=" + retriesOverwritten.get()
                 + " scopeHookInjectFail=" + scopeHookInjectionFailures.get()
-                + " fallbackActivations=" + fallbackActivations.get();
+                + " fallbackActivations=" + fallbackActivations.get()
+                + " unmapped=" + unmappedTraceIds.get();
     }
 }
