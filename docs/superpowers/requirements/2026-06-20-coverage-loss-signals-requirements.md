@@ -130,7 +130,7 @@
 | REQ-ID | 요구사항 | 수용 테스트 | Level | Status |
 |--------|----------|-------------|-------|--------|
 | CLS-REQ-001 | servlet 무-baggage·무컨텍스트(윈도우 내) → WARN+카운터 | `MissingTestIdInboundIT#missingId_increments_and_warnsOnce` · `#withBaggage_noSignal` · `#noActiveStore_noSignal` | integration | 🟢 green |
-| CLS-REQ-002 | 무컨텍스트 드롭 카운트 + active==0 미귀속 분류 | `OrphanProbeCounterIT#noContextThread_incrementsDroppedNoContext` · `#noActiveStore_incrementsUnattributedDrops` | integration | 🟢 green |
+| CLS-REQ-002 | 무컨텍스트 드롭 카운트 + active==0 미귀속 분류 | `OrphanProbeCounterIT#noContextThread_incrementsDroppedNoContext` (active==0 미귀속·active>0 귀속 모두 단언) | integration | 🟢 green |
 | CLS-REQ-003 | servlet 아닌 cross-thread 손실 포착 | `CrossThreadDropIT#asyncWorker_incrementsDroppedNoContext` | integration | 🟢 green |
 | CLS-REQ-004 | per-test 플래그(직렬, classCount=0, race-safe) | `IncompleteAttributionSerialIT#workerOnlyTest_flaggedExact_notDiscarded` · `#trulyEmpty_discarded` | integration | 🟢 green |
 | CLS-REQ-005 | per-test 플래그(병렬, conservative) | `IncompleteAttributionParallelIT#concurrentDrops_flaggedConservative_noLoss` | integration | 🟢 green |
