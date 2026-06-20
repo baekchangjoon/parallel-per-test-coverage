@@ -58,11 +58,11 @@ class PjacocoRuleTest {
         };
         rule.apply(base, desc).evaluate();
 
-        assertEquals("SampleSuite#doesThing", idDuring[0], "id active during the test");
+        assertEquals("io.pjacoco.testkit.junit4.PjacocoRuleTest$SampleSuite#doesThing", idDuring[0], "id active during the test");
         assertNull(Pjacoco.currentTestId(), "id cleared after the test");
         assertEquals(2, queries.size());
-        assertEquals("/__coverage__/test/start?testId=SampleSuite%23doesThing", queries.get(0));
-        assertEquals("/__coverage__/test/stop?testId=SampleSuite%23doesThing&result=passed", queries.get(1));
+        assertEquals("/__coverage__/test/start?testId=io.pjacoco.testkit.junit4.PjacocoRuleTest%24SampleSuite%23doesThing", queries.get(0));
+        assertEquals("/__coverage__/test/stop?testId=io.pjacoco.testkit.junit4.PjacocoRuleTest%24SampleSuite%23doesThing&result=passed", queries.get(1));
     }
 
     @Test
@@ -73,7 +73,7 @@ class PjacocoRuleTest {
             public void evaluate() { throw new AssertionError("boom"); }
         };
         assertThrows(AssertionError.class, () -> rule.apply(base, desc).evaluate());
-        assertEquals("/__coverage__/test/stop?testId=SampleSuite%23boom&result=failed", queries.get(1));
+        assertEquals("/__coverage__/test/stop?testId=io.pjacoco.testkit.junit4.PjacocoRuleTest%24SampleSuite%23boom&result=failed", queries.get(1));
         assertNull(Pjacoco.currentTestId());
     }
 }
