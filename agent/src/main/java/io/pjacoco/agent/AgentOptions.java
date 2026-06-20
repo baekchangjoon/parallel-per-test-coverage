@@ -63,4 +63,13 @@ public final class AgentOptions {
     // passed through to jacoco-core instrumentation
     public String includes()    { return get("includes", "*"); }
     public String excludes()    { return get("excludes", ""); }
+    /** Whether to instrument JDK runtime classes — those loaded by the bootstrap classloader
+     *  (java.*, sun.*) or, on Java 9+, the platform classloader (jdk.*, com.sun.*, java.sql, ...).
+     *  Default false. This follows jacoco's {@code inclbootstrapclasses} (which gates the bootstrap
+     *  loader) and extends it to the platform loader, because instrumenting either set during premain
+     *  aborts the VM — a native JPLIS {@code ASSERTION FAILED} for bootstrap classes, or a JPMS
+     *  module-read {@code IllegalAccessError} for platform classes (e.g. com.sun.net.httpserver.HttpServer,
+     *  which the agent's own control endpoint uses). Leave false unless you specifically need JDK-class
+     *  coverage and accept the risk. */
+    public boolean inclBootstrapClasses() { return Boolean.parseBoolean(get("inclbootstrapclasses", "false")); }
 }

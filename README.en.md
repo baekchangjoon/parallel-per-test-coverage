@@ -232,7 +232,8 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 | option | meaning | default |
 |---|---|---|
 | `destfile` | output **directory** (many per-test files) | `coverage` |
-| `includes`/`excludes` | instrumentation scope (jacoco `WildcardMatcher`) | `*` / `` |
+| `includes`/`excludes` | instrumentation scope (jacoco `WildcardMatcher`). The default `*` instruments **application classes only** and auto-skips JDK runtime classes (bootstrap/platform loaders: `java.*`/`sun.*`/`jdk.*`/`com.sun.*`, …) — instrumenting those crashes premain with a native JPLIS assertion (same as jacoco `inclbootstrapclasses=false`). | `*` / `` |
+| `inclbootstrapclasses` | also instrument JDK runtime classes (bootstrap/platform loaders) — opt-in. Default `false`; enable only if you specifically need JDK-class coverage and accept the risk. | `false` |
 | `port`/`address` | control endpoint binding | `6310` / `127.0.0.1` (loopback) |
 | `autoRegister` | record a testId that arrives without a prior `start` (default strict: not recorded) | `false` |
 | `aggregate` | write the whole-run aggregate `.exec` at shutdown | `true` |

@@ -301,7 +301,8 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 | 옵션 | 의미 | 기본 |
 |---|---|---|
 | `destfile` | 출력 **디렉터리**(per-test 파일 다수) | `coverage` |
-| `includes`/`excludes` | 계측 대상(WildcardMatcher, jacoco와 동일) | `*` / `` |
+| `includes`/`excludes` | 계측 대상(WildcardMatcher, jacoco와 동일). 기본 `*`는 **앱 클래스만** 계측하며 JDK 런타임 클래스(bootstrap·platform 로더: `java.*`/`sun.*`/`jdk.*`/`com.sun.*` 등)는 자동 제외한다 — 이들을 계측하면 premain이 네이티브 JPLIS 어서션으로 크래시하기 때문(jacoco `inclbootstrapclasses=false`와 동일). | `*` / `` |
+| `inclbootstrapclasses` | JDK 런타임 클래스(bootstrap·platform 로더)도 계측 대상에 포함(opt-in). 기본 `false` — JDK 커버리지가 꼭 필요하고 위험을 감수할 때만 켠다. | `false` |
 | `port`/`address` | 제어 엔드포인트 바인딩 | `6310` / `127.0.0.1`(loopback) |
 | `autoRegister` | start 없이 도착한 testId도 기록(기본은 strict: 미기록) | `false` |
 | `aggregate` | 종료 시 전체 실행 집계 `.exec` 작성 | `true` |
