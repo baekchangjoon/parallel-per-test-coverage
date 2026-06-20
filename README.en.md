@@ -222,6 +222,13 @@ and Sonar read it as-is.
 
 You can also drive the agent jar with `-javaagent` yourself, without the plugin.
 
+> **Attaching without the testkit = a vanilla-JaCoCo drop-in (aggregate only).** The default `mode=strict`
+> means that without the testkit's per-test start/stop boundary there are zero per-test `.exec` files and
+> only the whole-run aggregate (`aggregate.exec`) accumulates — this is the simplest way to get the same
+> total coverage as vanilla, with no build changes. Add the plugin + testkit from [Quick
+> start](#quick-start-recommended) when you want per-test. Since no control plane is needed, `control=false`
+> (or `port=0`) avoids port conflicts.
+
 First get the jar — from [Releases](../../releases/latest), or build it:
 
 ```bash
@@ -253,13 +260,14 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 
 | option | meaning | default |
 |---|---|---|
-| `destfile` | output **directory** (many per-test files) | `coverage` |
+| `destdir` / `destfile` | output **directory** (many per-test files). Since the value is a directory, not a single file, `destdir` is the clearer alias (`destdir` wins if both are set; avoids confusion with vanilla jacoco's single-file `destfile`). | `coverage` |
 | `includes`/`excludes` | instrumentation scope (jacoco `WildcardMatcher`). The default `*` instruments **application classes only** and auto-skips JDK runtime classes (bootstrap/platform loaders: `java.*`/`sun.*`/`jdk.*`/`com.sun.*`, …) — instrumenting those crashes premain with a native JPLIS assertion (same as jacoco `inclbootstrapclasses=false`). | `*` / `` |
 | `inclbootstrapclasses` | also instrument JDK runtime classes (bootstrap/platform loaders) — opt-in. Default `false`; enable only if you specifically need JDK-class coverage and accept the risk. | `false` |
-| `port`/`address` | control endpoint binding | `6310` / `127.0.0.1` (loopback) |
+| `control` | whether to start the control endpoint (per-test start/stop · trace/map HTTP). **Pure aggregate/in-process users can set `control=false`** to drop the port-bind cost and conflicts entirely (when no testkit/per-test control is needed). | `true` |
+| `port`/`address` | control endpoint binding. **`port=0` binds an ephemeral port** (avoids parallel conflicts); the actual port is exposed via the `pjacoco.control-port` system property. | `6310` / `127.0.0.1` (loopback) |
 | `autoRegister` | record a testId that arrives without a prior `start` (default strict: not recorded) | `false` |
 | `aggregate` | write the whole-run aggregate `.exec` at shutdown | `true` |
-| `aggregateFile` | aggregate file name or absolute path | `aggregate.exec` |
+| `aggregateFile` | aggregate file name or absolute path. A **`%p` (JVM PID) placeholder** in the name (`aggregate-%p.exec`) namespaces the dump per JVM, so a multi-module reactor where each module forks its own test JVM into the same directory won't overwrite each other (merge afterwards with `jacococli merge`). | `aggregate.exec` |
 | `junit4Auto` | let the agent handle JUnit 4 in-process tests automatically | `true` |
 | `commitSha` | written to the manifest header (or env `PJACOCO_COMMIT`) | — |
 

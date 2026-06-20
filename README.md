@@ -291,6 +291,12 @@ java -cp <pjacoco-agent.jar> io.pjacoco.agent.output.TraceMergeMain \
 
 플러그인 없이 에이전트 jar를 직접 `-javaagent`로 다룰 수도 있습니다.
 
+> **테스트킷 없이 붙이면 = vanilla JaCoCo 대체(aggregate 전용).** 기본 `mode=strict`라, 테스트킷의
+> per-test start/stop 경계가 없으면 per-test `.exec`는 0이고 전체 실행 집계(`aggregate.exec`)만 쌓입니다
+> — 이게 "빌드 수정 없이 vanilla와 동일한 전체 커버리지"를 얻는 가장 간단한 경로입니다. per-test가
+> 필요해지면 위 [빠른 시작](#빠른-시작-권장)의 플러그인 + 테스트킷을 더하세요. 제어 평면이 필요 없으니
+> `control=false`(또는 `port=0`)로 포트 충돌도 피할 수 있습니다.
+
 먼저 jar를 준비합니다 — [Releases](../../releases/latest)에서 받거나 직접 빌드합니다:
 
 ```bash
@@ -324,13 +330,14 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 
 | 옵션 | 의미 | 기본 |
 |---|---|---|
-| `destfile` | 출력 **디렉터리**(per-test 파일 다수) | `coverage` |
+| `destdir` / `destfile` | 출력 **디렉터리**(per-test 파일 다수). 값이 단일 파일이 아니라 디렉터리이므로 `destdir`가 더 명확한 별칭이다(둘 다 지정 시 `destdir` 우선; vanilla jacoco의 단일파일 `destfile`과 혼동 방지). | `coverage` |
 | `includes`/`excludes` | 계측 대상(WildcardMatcher, jacoco와 동일). 기본 `*`는 **앱 클래스만** 계측하며 JDK 런타임 클래스(bootstrap·platform 로더: `java.*`/`sun.*`/`jdk.*`/`com.sun.*` 등)는 자동 제외한다 — 이들을 계측하면 premain이 네이티브 JPLIS 어서션으로 크래시하기 때문(jacoco `inclbootstrapclasses=false`와 동일). | `*` / `` |
 | `inclbootstrapclasses` | JDK 런타임 클래스(bootstrap·platform 로더)도 계측 대상에 포함(opt-in). 기본 `false` — JDK 커버리지가 꼭 필요하고 위험을 감수할 때만 켠다. | `false` |
-| `port`/`address` | 제어 엔드포인트 바인딩 | `6310` / `127.0.0.1`(loopback) |
+| `control` | 제어 엔드포인트(per-test start/stop·trace/map HTTP) 시작 여부. **순수 aggregate/in-process 사용자는 `control=false`로 포트 바인딩 비용·충돌을 모두 제거**한다(테스트킷/per-test 제어가 필요 없을 때). | `true` |
+| `port`/`address` | 제어 엔드포인트 바인딩. **`port=0`이면 임의 빈 포트**를 잡아 병렬 충돌을 피하고, 실제 포트는 System property `pjacoco.control-port`로 노출된다. | `6310` / `127.0.0.1`(loopback) |
 | `autoRegister` | start 없이 도착한 testId도 기록(기본은 strict: 미기록) | `false` |
 | `aggregate` | 종료 시 전체 실행 집계 `.exec` 작성 | `true` |
-| `aggregateFile` | 집계 파일 이름 또는 절대 경로 | `aggregate.exec` |
+| `aggregateFile` | 집계 파일 이름 또는 절대 경로. 파일명에 **`%p`(JVM PID) 플레이스홀더**를 쓰면(`aggregate-%p.exec`) 멀티모듈 reactor에서 모듈마다 별도 JVM이 같은 디렉터리에 써도 서로 덮어쓰지 않는다(끝나고 `jacococli merge`로 합친다). | `aggregate.exec` |
 | `junit4Auto` | JUnit 4 인-프로세스 테스트를 에이전트가 자동 처리 | `true` |
 | `traceKeyAutoCreate` | 트레이서(OTel/Brave) trace context를 coverage 키로 소비; 미등록 traceId 키 store 자동 생성 + Brave/OTel scope weave 설치 (비동기 per-test 귀속) | `false` |
 | `maxTraceMappings` | `POST /__coverage__/trace/map` 매핑 저장소의 LRU 상한. 장기 실행 서비스 OOM 방지. | `100000` |

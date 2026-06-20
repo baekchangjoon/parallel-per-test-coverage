@@ -35,9 +35,23 @@ public final class Bootstrap {
     private Bootstrap() {}
 
     public static void premain(String args, Instrumentation inst) throws Exception {
+        AgentLog log = new AgentLog();
+        try {
+            install(args, inst, log);
+        } catch (Throwable t) {
+            // REQ-U03: a catchable premain failure surfaces a self-identifying line on stderr (instead of
+            // a bare "Exit Code 134"), then fails fast — swallowing risks a half-initialized agent
+            // (registry bound but instrumentation/shutdown-hook missing) producing silently wrong coverage.
+            log.error("init", "agent initialization failed: " + t + " — coverage disabled");
+            if (t instanceof Error) throw (Error) t;
+            if (t instanceof RuntimeException) throw (RuntimeException) t;
+            throw (Exception) t;
+        }
+    }
+
+    private static void install(String args, Instrumentation inst, AgentLog log) throws Exception {
         AgentOptions options = AgentOptions.parse(args);
         Metrics metrics = new Metrics();
-        AgentLog log = new AgentLog();
 
         String commitSha = options.commitSha() != null ? options.commitSha()
                 : System.getenv("PJACOCO_COMMIT");
@@ -77,14 +91,21 @@ public final class Bootstrap {
         final RuntimeData runtimeData = ProbeInstrumentation.install(inst, options);
 
         // Best-effort control endpoint (the in-process path never calls it; a bind clash is harmless there).
+        // REQ-U01: control=false skips it entirely (pure aggregate/in-process users avoid the bind cost and
+        // port conflicts); port=0 binds an ephemeral port, surfaced via the pjacoco.control-port property.
         final ControlEndpoint[] endpointRef = new ControlEndpoint[1];
-        try {
-            ControlEndpoint endpoint = new ControlEndpoint(registry, mapping, options.controlHost(), options.controlPort());
-            int port = endpoint.start();
-            endpointRef[0] = endpoint;
-            log.info("control endpoint on " + options.controlHost() + ":" + port);
-        } catch (Exception e) {
-            log.warn("control", "failed to start control endpoint: " + e);
+        if (options.control()) {
+            try {
+                ControlEndpoint endpoint = new ControlEndpoint(registry, mapping, options.controlHost(), options.controlPort());
+                int port = endpoint.start();
+                endpointRef[0] = endpoint;
+                System.setProperty("pjacoco.control-port", String.valueOf(port));
+                log.info("control endpoint on " + options.controlHost() + ":" + port);
+            } catch (Exception e) {
+                log.warn("control", "failed to start control endpoint: " + e);
+            }
+        } else {
+            log.info("control endpoint disabled (control=false)");
         }
 
         // Scheduler holder: populated only when traceKeyAutoCreate is on (reaper daemon).
