@@ -2,6 +2,7 @@ package io.pjacoco.agent.inbound.servlet;
 
 import io.pjacoco.agent.context.CoverageContext;
 import io.pjacoco.agent.inbound.BaggageParser;
+import io.pjacoco.agent.observability.AgentLog;
 import io.pjacoco.agent.observability.Metrics;
 import io.pjacoco.agent.store.TestStore;
 import io.pjacoco.agent.store.TestStoreRegistry;
@@ -12,6 +13,7 @@ import io.pjacoco.agent.trace.TestIdSource;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import net.bytebuddy.asm.Advice;
 
 /**
@@ -45,6 +47,12 @@ public final class ServletAdvice {
      */
     public static volatile Metrics metrics;
 
+    /** Bound once by ServletInboundActivator; used for the once-per-JVM missing-test.id WARN. */
+    public static volatile AgentLog log;
+    private static final AtomicBoolean MISSING_ID_WARNED = new AtomicBoolean(false);
+    /** Test-only: reset the once-per-JVM warn guard between integration tests. */
+    public static void resetWarnGuardForTest() { MISSING_ID_WARNED.set(false); }
+
     /**
      * Ordered tracer sources — OTel first, Brave second.  Declared {@code public volatile} so
      * tests can replace the list without subclassing.  In production this list never changes.
@@ -76,6 +84,20 @@ public final class ServletAdvice {
                 TestStore store = reg.forCoverageKey(key);
                 if (store != null) {
                     CoverageContext.set(store);
+                }
+            } else if (CoverageContext.get() == null && reg.hasActive()) {
+                // No tracer/baggage test.id, no active context on this thread, but a collection window is
+                // open → this request's probes will be dropped. Surface it (CLS-REQ-001).
+                Metrics mm = metrics;
+                if (mm != null) mm.missingTestIdInbound.incrementAndGet();
+                if (MISSING_ID_WARNED.compareAndSet(false, true)) {
+                    String msg = "inbound HTTP request had no test.id (no tracer scope, no 'baggage: test.id') "
+                            + "and no active in-process context; its probes are not attributed to any test. "
+                            + "For black-box HTTP tests (SpringBootTest RANDOM_PORT + TestRestTemplate/RestAssured) "
+                            + "use the out-of-process baggage model. (logged once; see shutdown summary for totals)";
+                    AgentLog lg = log;
+                    if (lg != null) lg.warn("missing-test-id", msg);
+                    else System.err.println("[pjacoco][WARN] " + msg);
                 }
             }
         } catch (Throwable ignored) { /* never disturb the app */ }

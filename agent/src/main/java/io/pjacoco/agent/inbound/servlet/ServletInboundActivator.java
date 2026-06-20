@@ -24,6 +24,7 @@ public final class ServletInboundActivator implements InboundActivator {
     public ServletInboundActivator(TestStoreRegistry registry, Metrics metrics, AgentLog log) {
         ServletAdvice.registry = registry;   // bind the statics the woven advice reads
         ServletAdvice.metrics  = metrics;
+        ServletAdvice.log      = log;
     }
 
     @Override
