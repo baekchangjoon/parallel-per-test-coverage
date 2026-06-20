@@ -4,7 +4,7 @@
 allprojects {
     group = "io.pjacoco"   // NOT org.jacoco — that namespace belongs to the JaCoCo project
     // Overridable so the release workflow can stamp the published version: -PreleaseVersion=x.y.z
-    version = providers.gradleProperty("releaseVersion").getOrElse("1.2.0")
+    version = providers.gradleProperty("releaseVersion").getOrElse("1.3.0")
 
     // Library javadoc contains code examples with annotations (e.g. @ExtendWith) that doclint
     // misreads as tags; don't fail the publishable javadoc jars on lint.

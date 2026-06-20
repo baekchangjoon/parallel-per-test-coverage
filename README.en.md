@@ -95,15 +95,15 @@ examples: [`samples/gradle-sample`](samples/gradle-sample) · [`samples/maven-sa
 **Gradle** (`build.gradle.kts`):
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.2.0" }
+plugins { id("io.pjacoco.gradle") version "1.3.0" }
 
 pjacoco {
     includes.set(listOf("com.example.*"))
     attachTo.set(listOf("integrationTest"))   // inject the agent + control-url into this test JVM
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.2.0")
-    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.2.0")
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.3.0")
+    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.3.0")
 }
 ```
 
@@ -123,7 +123,7 @@ class OwnerBlackBoxIT {
 
 ```xml
 <plugin>
-  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.2.0</version>
+  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.3.0</version>
   <executions><execution><goals><goal>prepare-agent</goal></goals></execution></executions>
   <configuration><includes><include>com.example.*</include></includes></configuration>
 </plugin>
@@ -158,14 +158,14 @@ below). JUnit 4 is handled by the agent, so it needs no `@Rule` either.
 > [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.2.0" }
+plugins { id("io.pjacoco.gradle") version "1.3.0" }
 
 pjacoco {
     attachTo.set(listOf("test"))          // the test task(s) to inject the agent into
     includes.set(listOf("com.example.*")) // the in-process path needs no control-url
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.2.0")   // JUnit 5 applied automatically
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.3.0")   // JUnit 5 applied automatically
     // JUnit 4 works from the agent alone — no dependency, no @Rule
 }
 ```
@@ -233,7 +233,7 @@ First get the jar — from [Releases](../../releases/latest), or build it:
 
 ```bash
 # Download a specific version (find the version on the Releases page)
-wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.0.0/jacocoagent-parallel-1.0.0.jar
+wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.3.0/jacocoagent-parallel-1.3.0.jar
 # Or grab the latest release with the gh CLI
 gh release download --repo baekchangjoon/parallel-per-test-coverage --pattern 'jacocoagent-parallel-*.jar'
 # Or build it (JDK 17+ to run Gradle; the artifact targets Java 8)

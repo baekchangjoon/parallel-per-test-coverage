@@ -23,7 +23,7 @@ import org.gradle.process.JavaForkOptions;
 public class PjacocoPlugin implements Plugin<Project> {
 
     /** Default agent version when {@code agentVersion} is not set. */
-    public static final String DEFAULT_AGENT_VERSION = "1.2.0";
+    public static final String DEFAULT_AGENT_VERSION = "1.3.0";
 
     static final String CONFIGURATION_NAME = "pjacocoAgent";
 
