@@ -3,6 +3,7 @@ package io.pjacoco.agent.control;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
+import io.pjacoco.agent.mapping.TestIdMappingRegistry;
 import io.pjacoco.agent.store.TestStoreRegistry;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -11,15 +12,17 @@ import java.net.URLDecoder;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Loopback HTTP control plane: {@code POST /__coverage__/test/start|stop}. */
+/** Loopback HTTP control plane: {@code POST /__coverage__/test/start|stop|trace/map}. */
 public final class ControlEndpoint {
     private final TestStoreRegistry registry;
+    private final TestIdMappingRegistry mapping;
     private final String host;
     private final int port;
     private HttpServer server;
 
-    public ControlEndpoint(TestStoreRegistry registry, String host, int port) {
+    public ControlEndpoint(TestStoreRegistry registry, TestIdMappingRegistry mapping, String host, int port) {
         this.registry = registry;
+        this.mapping = mapping;
         this.host = host;
         this.port = port;
     }
@@ -32,6 +35,9 @@ public final class ControlEndpoint {
         });
         server.createContext("/__coverage__/test/stop", new HttpHandler() {
             public void handle(HttpExchange ex) throws IOException { handleStop(ex); }
+        });
+        server.createContext("/__coverage__/trace/map", new HttpHandler() {
+            public void handle(HttpExchange ex) throws IOException { handleTraceMap(ex); }
         });
         server.setExecutor(null);
         server.start();
@@ -54,6 +60,15 @@ public final class ControlEndpoint {
         if (testId == null) { respond(ex, 400, "missing testId"); return; }
         registry.stop(testId, q.get("result"));
         respond(ex, 200, "stopped " + testId);
+    }
+
+    private void handleTraceMap(HttpExchange ex) throws IOException {
+        Map<String, String> q = query(ex);
+        String traceId = q.get("traceId");
+        String testId = q.get("testId");
+        if (traceId == null || testId == null) { respond(ex, 400, "missing traceId or testId"); return; }
+        mapping.register(traceId, testId);
+        respond(ex, 200, "mapped " + traceId + " -> " + testId);
     }
 
     private static Map<String, String> query(HttpExchange ex) {
