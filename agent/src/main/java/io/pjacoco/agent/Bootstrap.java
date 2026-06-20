@@ -15,6 +15,7 @@ import io.pjacoco.agent.probe.CoverageBridge;
 import io.pjacoco.agent.probe.ProbeInstrumentation;
 import io.pjacoco.agent.mapping.TestIdMappingRegistry;
 import io.pjacoco.agent.store.TestStoreRegistry;
+import io.pjacoco.agent.store.TraceStoreReaper;
 import io.pjacoco.agent.trace.BraveTestIdSource;
 import io.pjacoco.agent.trace.CoverageKeyResolver;
 import io.pjacoco.agent.trace.OtelTestIdSource;
@@ -24,6 +25,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.jacoco.core.runtime.RuntimeData;
 
 /** Java agent entry point: wires the registry, control endpoint, probe + inbound instrumentation. */
@@ -39,11 +43,13 @@ public final class Bootstrap {
                 : System.getenv("PJACOCO_COMMIT");
 
         final Path outDir = Paths.get(options.outputDir());
+        final java.util.function.LongSupplier clockSupplier = new java.util.function.LongSupplier() {
+            public long getAsLong() { return System.currentTimeMillis(); }
+        };
         final TestStoreRegistry registry = new TestStoreRegistry(
                 outDir, new ExecWriter(), metrics, log,
-                options.autoRegister(), options.maxStores(), new java.util.function.LongSupplier() {
-                    public long getAsLong() { return System.currentTimeMillis(); }
-                }, options.traceKeyAutoCreate());
+                options.autoRegister(), options.maxStores(), clockSupplier,
+                options.traceKeyAutoCreate(), options.inFlightGuardMillis());
 
         final TestIdMappingRegistry mapping = new TestIdMappingRegistry(options.maxTraceMappings());
 
@@ -80,14 +86,20 @@ public final class Bootstrap {
             log.warn("control", "failed to start control endpoint: " + e);
         }
 
+        // Scheduler holder: populated only when traceKeyAutoCreate is on (reaper daemon).
+        final ScheduledExecutorService[] schedulerRef = new ScheduledExecutorService[1];
+
         // Shutdown hook registered UNCONDITIONALLY (independent of endpoint start) so the default-on
         // aggregate dump and the partial-store dump always run — even when a port-bind clash skips the
-        // endpoint. Order: partial dump -> aggregate -> stop endpoint (if started).
+        // endpoint. Order: reaper stop -> partial dump -> aggregate -> endpoint stop -> trace-map dump -> summary.
         final AgentOptions opts = options;
         final Metrics m = metrics;
         final AgentLog l = log;
         Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
             public void run() {
+                if (schedulerRef[0] != null) {
+                    schedulerRef[0].shutdownNow();
+                }
                 registry.dumpRemainingAsPartial();
                 if (opts.aggregate()) {
                     try {
@@ -96,10 +108,10 @@ public final class Bootstrap {
                         l.warn("aggregate", "failed to write whole-run aggregate: " + e);
                     }
                 }
-                mapping.writeTo(outDir.resolve("trace-map.properties"));
                 if (endpointRef[0] != null) {
                     endpointRef[0].stop();
                 }
+                mapping.writeTo(outDir.resolve("trace-map.properties"));
                 l.info(m.summary());
             }
         }));
@@ -122,6 +134,24 @@ public final class Bootstrap {
             new BraveScopeInboundActivator(traceBridge, metrics).install(inst);
             // OTel weave: reuses the same traceBridge; best-effort (a missing OTel javaagent is a no-op).
             new OtelScopeInboundActivator(traceBridge, metrics).install(inst);
+
+            // Idle reaper daemon: flushes finished trace stores without JVM shutdown (REQ-016).
+            final TraceStoreReaper reaper = new TraceStoreReaper(
+                    registry, clockSupplier,
+                    options.traceIdleFlushMillis(), options.traceLateWriteGraceMillis());
+            final long reaperInterval = options.traceReaperIntervalMillis();
+            ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
+                    new java.util.concurrent.ThreadFactory() {
+                        public Thread newThread(Runnable r) {
+                            Thread t = new Thread(r, "pjacoco-reaper");
+                            t.setDaemon(true);
+                            return t;
+                        }
+                    });
+            scheduler.scheduleWithFixedDelay(new Runnable() {
+                public void run() { reaper.tick(); }
+            }, reaperInterval, reaperInterval, TimeUnit.MILLISECONDS);
+            schedulerRef[0] = scheduler;
         }
 
         log.info("agent installed (output=" + options.outputDir()
