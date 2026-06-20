@@ -5,6 +5,7 @@ import io.pjacoco.agent.observability.Metrics;
 import io.pjacoco.agent.output.ExecWriter;
 import java.nio.file.Path;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
@@ -116,6 +117,31 @@ public final class TestStoreRegistry {
             metrics.partialDumps.incrementAndGet();
         }
     }
+
+    // ---- Reaper cooperator accessors (package-visible) --------------------------------
+
+    /** Returns a snapshot of the current store map for the reaper to iterate safely. */
+    synchronized Map<String, TestStore> snapshotStores() {
+        return new LinkedHashMap<String, TestStore>(stores);
+    }
+
+    /**
+     * Flush a store by key without removing it from the map (grace-period: store is kept alive
+     * so late writes after flush are still captured until eviction).
+     * Cap-race no-op: if the store has already been removed, silently returns.
+     */
+    synchronized void flushStore(String key) {
+        TestStore s = stores.get(key);
+        if (s == null) return;
+        flush(s, null, "idle");
+    }
+
+    /** Remove a store by key WITHOUT flushing (called by reaper after final flush-on-evict). */
+    synchronized void evictWithoutFlush(String key) {
+        stores.remove(key);
+    }
+
+    // ---- internal -----------------------------------------------------------------
 
     private void enforceCap() {
         while (stores.size() > maxStores) {
