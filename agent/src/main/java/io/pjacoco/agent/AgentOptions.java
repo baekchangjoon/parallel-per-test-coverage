@@ -51,6 +51,14 @@ public final class AgentOptions {
     public boolean traceKeyAutoCreate() { return Boolean.parseBoolean(get("traceKeyAutoCreate", "false")); }
     /** Bounded cap for the report-time traceId->testId map (REQ-011). Default 100000. */
     public int maxTraceMappings() { return Integer.parseInt(get("maxTraceMappings", "100000")); }
+    /** Reaper daemon tick interval in ms. Default 10000. */
+    public long traceReaperIntervalMillis() { return Long.parseLong(get("traceReaperIntervalMillis", "10000")); }
+    /** Idle threshold before a store is flushed by the reaper (ms). Default 30000. */
+    public long traceIdleFlushMillis() { return Long.parseLong(get("traceIdleFlushMillis", "30000")); }
+    /** Grace period after idle flush before a store is evicted (ms). Default 10000. */
+    public long traceLateWriteGraceMillis() { return Long.parseLong(get("traceLateWriteGraceMillis", "10000")); }
+    /** In-flight guard window for the store cap eviction path (ms). Defaults to traceIdleFlushMillis if unset. */
+    public long inFlightGuardMillis() { return Long.parseLong(get("inFlightGuardMillis", String.valueOf(traceIdleFlushMillis()))); }
 
     // passed through to jacoco-core instrumentation
     public String includes()    { return get("includes", "*"); }
