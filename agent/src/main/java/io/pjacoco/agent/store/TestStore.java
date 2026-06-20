@@ -12,11 +12,14 @@ public final class TestStore {
     private volatile int retryCount;
     // classId -> ClassProbes. boolean[] writes are benign races (same property JaCoCo relies on).
     private final ConcurrentHashMap<Long, ClassProbes> byClass = new ConcurrentHashMap<Long, ClassProbes>();
+    private long writes;                      // plain long: clock-free hot-path activity signal
+    private volatile long lastActivityMillis; // reaper-written, enforceCap-read; init = startedAtMillis
 
     public TestStore(String testId, long startedAtMillis, String shardId) {
         this.testId = testId;
         this.startedAtMillis = startedAtMillis;
         this.shardId = shardId;
+        this.lastActivityMillis = startedAtMillis;
     }
 
     public void record(long classId, String className, int probeId, int probeCount) {
@@ -30,6 +33,7 @@ public final class TestStore {
         if (probeId >= 0 && probeId < p.length) {
             p[probeId] = true;
         }
+        writes++;
     }
 
     /** Deep copy so a late write during flush cannot corrupt serialization. */
@@ -48,4 +52,7 @@ public final class TestStore {
     public String shardId() { return shardId; }
     public int retryCount() { return retryCount; }
     public void incrementRetry() { retryCount++; }
+    public long writes() { return writes; }
+    public long lastActivityMillis() { return lastActivityMillis; }
+    public void lastActivityMillis(long millis) { this.lastActivityMillis = millis; }
 }
