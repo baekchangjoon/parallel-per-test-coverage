@@ -13,9 +13,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class CoverageBridge {
     private static final Map<String, Integer> PROBE_COUNTS = new ConcurrentHashMap<String, Integer>();
     private static volatile Metrics metrics;
+    private static volatile DropAttributor attributor;
     private CoverageBridge() {}
 
     public static void bindMetrics(Metrics m) { metrics = m; }
+    public static void bindAttributor(DropAttributor a) { attributor = a; }
 
     /** Instrument time: authoritative probe count per class (VM/slash name). */
     public static void setTotalProbeCount(String className, int count) {
@@ -26,7 +28,13 @@ public final class CoverageBridge {
     public static void recordCoverage(Class<?> clazz, long classId, int probeId) {
         try {
             TestStore store = CoverageContext.get();
-            if (store == null) return;                       // untagged / unregistered (resolved at activation)
+            if (store == null) {
+                Metrics m = metrics;
+                if (m != null) m.droppedNoContext.incrementAndGet();
+                DropAttributor a = attributor;
+                if (a != null) a.attribute();
+                return;                                  // untagged thread: drop, but now counted + attributed
+            }
             String name = clazz.getName().replace('.', '/');
             Integer count = PROBE_COUNTS.get(name);
             store.record(classId, name, probeId, count != null ? count.intValue() : probeId + 1);

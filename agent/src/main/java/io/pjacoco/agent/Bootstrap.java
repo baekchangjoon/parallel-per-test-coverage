@@ -71,6 +71,7 @@ public final class Bootstrap {
         }
 
         CoverageBridge.bindMetrics(metrics);
+        CoverageBridge.bindAttributor(new io.pjacoco.agent.probe.DropAttributor(registry, metrics));
 
         // Retain the global RuntimeData so the shutdown hook can dump the whole-run aggregate.
         final RuntimeData runtimeData = ProbeInstrumentation.install(inst, options);
