@@ -251,7 +251,7 @@
 
 **C1 완료 상태 (DoD):**
 - C1 Must REQ-001~010, REQ-022: **12/12 🟢** (분모 12, 분자 12)
-- REQ-019 (미연기 Should): **🟡 partial** — C1 범위(scopeHookInjectionFailures + fallbackActivations) 완료; unmappedTraceIds·evictedInFlightTraces는 C3
+- REQ-019 (미연기 Should): **🟡 partial** — C1(scopeHookInjectionFailures + fallbackActivations) 완료; C2(unmappedTraceIds) 완료; evictedInFlightTraces는 C3
 - REQ-024 (Should): **🔵 deferred** — GA-1 PASS로 choke-point 폴백 경로 불필요, C3 재평가 → 분모 제외
 - **C1 Must 커버리지: 12/12 (100%)**
 
