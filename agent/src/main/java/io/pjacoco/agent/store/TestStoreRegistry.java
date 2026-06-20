@@ -4,6 +4,8 @@ import io.pjacoco.agent.observability.AgentLog;
 import io.pjacoco.agent.observability.Metrics;
 import io.pjacoco.agent.output.ExecWriter;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -85,6 +87,11 @@ public final class TestStoreRegistry {
     public TestStore peek(String testId) {
         return stores.get(testId);
     }
+
+    /** Snapshot of currently-active stores (safe to iterate after return). Used by DropAttributor. */
+    public Collection<TestStore> activeSnapshot() { return new ArrayList<TestStore>(stores.values()); }
+    /** True if any test store is currently active (collection window open). */
+    public boolean hasActive() { return !stores.isEmpty(); }
 
     /**
      * Tracer-mode lookup: if {@code traceKeyAutoCreate} is enabled and the key is not yet registered,
