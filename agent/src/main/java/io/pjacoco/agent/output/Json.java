@@ -16,6 +16,11 @@ public final class Json {
         return this;
     }
 
+    public Json put(String key, boolean value) {
+        sep().append('"').append(esc(key)).append("\":").append(value);
+        return this;
+    }
+
     private StringBuilder sep() {
         if (!first) sb.append(',');
         first = false;

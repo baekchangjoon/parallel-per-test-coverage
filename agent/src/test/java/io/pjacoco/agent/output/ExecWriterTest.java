@@ -53,4 +53,29 @@ class ExecWriterTest {
         assertArrayEquals(new boolean[]{true, true}, ed.getProbes());
         assertEquals("T1", sessions.getInfos().get(0).getId());
     }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("CLS-REQ-008: no drop -> attribution fields omitted")
+    void noDrop_omitsAttributionFields(@TempDir Path dir) throws Exception {
+        TestStore store = new TestStore("T_ND", 1000L, null);
+        store.record(1L, "com/example/Foo", 0, 1);
+        new ExecWriter().write(dir, store, "passed", null, 2000L);
+        String json = new String(Files.readAllBytes(dir.resolve("T_ND.json")), "UTF-8");
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("incompleteAttribution"), json);
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("droppedProbes"), json);
+        org.junit.jupiter.api.Assertions.assertFalse(json.contains("\"attribution\""), json);
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("CLS-REQ-008: drop>0 -> attribution fields emitted")
+    void withDrop_emitsAttributionFields(@TempDir Path dir) throws Exception {
+        TestStore store = new TestStore("T_D", 1000L, null);
+        store.recordDrop();
+        store.recordDrop();
+        new ExecWriter().write(dir, store, "passed", null, 2000L);
+        String json = new String(Files.readAllBytes(dir.resolve("T_D.json")), "UTF-8");
+        assertTrue(json.contains("\"incompleteAttribution\":true"), json);
+        assertTrue(json.contains("\"droppedProbes\":2"), json);
+        assertTrue(json.contains("\"attribution\":\"exact\""), json);
+    }
 }
