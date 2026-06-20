@@ -198,6 +198,10 @@ per-test `.exec` 들과 함께, JVM 종료 시 **전체 실행을 합친 `aggreg
 
 **coverage key = raw traceId.** 현 단계에서 key는 트레이서의 traceId 문자열이며, `testId` 표시명과의 매핑은 다음 단계(C2)에서 추가됩니다. 트레이서가 없거나 현재 스레드에 valid trace context가 없으면 기존 baggage `test.id` / JUnit 자동 처리 경로로 폴백하며 동작은 현행과 동일합니다. **트레이서 런타임 하드 의존 없음** — 트레이서 라이브러리가 없는 환경에서도 에이전트는 정상 로드되고 기존 경로로 운용됩니다.
 
+### trace-store 생명주기 (장기 실행 서비스)
+
+상시 가동 서비스에서는 JVM을 종료할 수 없으므로, `traceKeyAutoCreate=true` 시 **idle reaper**가 자동 활성화됩니다. reaper는 백그라운드에서 `traceReaperIntervalMillis`(기본 10s) 주기로 동작하며, `traceIdleFlushMillis`(기본 30s) 동안 업데이트가 없는 traceId store를 `<traceId>.exec`로 flush한 뒤 메모리에서 evict합니다 — JVM 종료 없이 수집 가능 상태가 됩니다. flush 직후 도착하는 늦은 비동기 쓰기는 `traceLateWriteGraceMillis`(기본 10s) 동안 store가 유지되어 재flush됩니다. store 수가 `maxStores`에 근접하면 idle store가 in-flight(최근 활동) store보다 먼저 evict되며(`inFlightGuardMillis` 옵션으로 보호 강도 조정), 불가피한 in-flight eviction은 `evictedInFlightTraces` metrics 카운터로 관측할 수 있습니다.
+
 ### 활성화 방법
 
 에이전트 옵션 `traceKeyAutoCreate=true`를 추가합니다. 이 옵션이 꺼져 있으면(기본) 트레이서 소비 경로가 설치되지 않아 기존 동작 그대로입니다.
@@ -288,6 +292,10 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 | `junit4Auto` | JUnit 4 인-프로세스 테스트를 에이전트가 자동 처리 | `true` |
 | `traceKeyAutoCreate` | 트레이서(OTel/Brave) trace context를 coverage 키로 소비; 미등록 traceId 키 store 자동 생성 + Brave/OTel scope weave 설치 (비동기 per-test 귀속) | `false` |
 | `maxTraceMappings` | `POST /__coverage__/trace/map` 매핑 저장소의 LRU 상한. 장기 실행 서비스 OOM 방지. | `100000` |
+| `traceReaperIntervalMillis` | idle reaper 실행 간격(ms). `traceKeyAutoCreate=true` 시 백그라운드 스레드가 이 주기로 idle store를 flush+evict한다. | `10000` |
+| `traceIdleFlushMillis` | traceId store를 idle로 판정하는 무업데이트 시간(ms). 이 시간 동안 업데이트가 없으면 reaper가 flush+evict한다. | `30000` |
+| `traceLateWriteGraceMillis` | flush 후 store를 유지하는 grace 기간(ms). flush 직후에도 이 시간 내 늦은 쓰기가 도착하면 재flush해 유실을 방지한다. | `10000` |
+| `inFlightGuardMillis` | eviction 시 최근 `inFlightGuardMillis` 이내에 업데이트된 store를 in-flight로 간주해 보호한다. 불가피한 in-flight eviction은 `evictedInFlightTraces` 카운터로 관측된다. | `0` |
 | `commitSha` | manifest 헤더에 기록(또는 env `PJACOCO_COMMIT`) | — |
 
 ## 산출물

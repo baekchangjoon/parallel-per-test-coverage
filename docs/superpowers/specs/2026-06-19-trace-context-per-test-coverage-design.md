@@ -154,9 +154,9 @@ pjacoco는 SUT에 붙은 JaCoCo probe 버퍼를 **testId별로 분할**해 per-t
 
 현 flush 경로는 `ControlEndpoint`의 `/test/stop`(→ `ExecWriter.write`) 또는 JVM 종료 시 partial dump뿐이며, **둘 다 testId 키 기준**이다. 트레이서 모드의 traceId-키 store에는 trace-scoped stop도, span-end 훅도, 타이머 flush도 없다 — 장기 실행 서비스(예: tainted-spring의 8서비스는 상시 가동)는 JVM 종료에 의존할 수 없다. 따라서 신규 정책을 둔다:
 
-- **flush 트리거:** 다음 중 하나로 traceId store를 `<traceId>.exec`로 내린다 — (a) **idle 타이머(reaper)**: 일정 시간 무업데이트인 traceId store를 백그라운드로 flush+evict, (b) 루트 scope close 시점 flush(단, async 잔여 작업이 있으면 grace period), (c) 명시적 control API. C3 집계는 테스트 종료 후 **드레인 대기 타임아웃** 뒤 수집(legacy-tram의 CDC 지연을 이미 반영).
-- **late-write grace period:** `/stop`/flush 이후에도 비동기/다운스트림 스레드가 같은 store에 기록할 수 있다. flush 직후 evict하면 그 쓰기는 유실된다. → flush 후 일정 grace 동안 store를 유지하고 늦은 쓰기를 append/merge하거나, evict 전 마지막 스냅샷을 재flush.
-- **메모리/eviction:** `TestStoreRegistry`는 `maxStores`(기본 1000)로 오래된 store를 partial dump하며 evict한다. traceId 키는 카디널리티가 높아(요청마다 신규) **in-flight trace가 mid-trace에 evict될 위험**이 있다. → 트레이서 모드 전용 cap/정책(별도 cap 또는 idle-우선 eviction)과 metrics 경보를 둔다. `active()` 경로에서도 cap/idle 정리가 동작하도록 한다.
+- **flush 트리거:** 다음 중 하나로 traceId store를 `<traceId>.exec`로 내린다 — (a) **idle 타이머(reaper)**: 일정 시간 무업데이트인 traceId store를 백그라운드로 flush+evict(**C3a 구현 확정 기본값: idle 임계 30s, 간격 10s**; 옵션 `traceIdleFlushMillis`/`traceReaperIntervalMillis`로 조정 가능), (b) 루트 scope close 시점 flush(단, async 잔여 작업이 있으면 grace period; **C3a 범위 외, C3b에서 구현**), (c) 명시적 control API (`/test/stop` — 즉시 flush, C3a에서도 유지). C3 집계는 테스트 종료 후 **드레인 대기 타임아웃** 뒤 수집(legacy-tram의 CDC 지연을 이미 반영).
+- **late-write grace period:** `/stop`/flush 이후에도 비동기/다운스트림 스레드가 같은 store에 기록할 수 있다. flush 직후 evict하면 그 쓰기는 유실된다. → flush 후 일정 grace 동안 store를 유지하고 늦은 쓰기를 append/merge하거나, evict 전 마지막 스냅샷을 재flush(**C3a 구현 확정 기본값: grace 10s**; 옵션 `traceLateWriteGraceMillis`).
+- **메모리/eviction:** `TestStoreRegistry`는 `maxStores`(기본 1000)로 오래된 store를 partial dump하며 evict한다. traceId 키는 카디널리티가 높아(요청마다 신규) **in-flight trace가 mid-trace에 evict될 위험**이 있다. → **C3a 구현 확정**: idle-우선(last-activity 기준) eviction + `inFlightGuardMillis`(옵션) 보호 + `evictedInFlightTraces` 카운터(불가피한 in-flight eviction을 `Metrics`로 관측). 비-트레이서 모드에서는 `lastActivityMillis = startedAtMillis`로 초기화되어 idle-first == oldest-start 동작 — 기존 회귀 없음.
 
 ### 6.5 C3 수집 토폴로지
 
@@ -237,7 +237,7 @@ pjacoco는 SUT에 붙은 JaCoCo probe 버퍼를 **testId별로 분할**해 per-t
 
 - `TestIdMappingRegistry` 등록을 어느 testkit 어댑터(JUnit5/4/RestAssured)에서, 어떤 메서드 형태로 주입할지(엔드포인트 계약은 §5.2-3에 명시; 어댑터 측 API만 미정).
 - ~~`TraceCoverageMerger` 출력 포맷의 서비스 차원 표현(기존 `.exec`/`.json` 스키마에 service 축을 어떻게 더할지)과 `ExecutionDataStore.merge()` 적용 가부.~~ → **해소 (C2):** `ExecFileLoader` OR-merge(`ExecutionDataStore.put()` → `ExecutionData.merge()`)로 구현 완료; 서비스 차원 표현은 C3 과제.
-- §6.5 수집 토폴로지 택1 확정과 CDC 드레인 타임아웃·idle-reaper·grace period 기본값.
+- §6.5 수집 토폴로지 택1 확정과 CDC 드레인 타임아웃. (~~idle-reaper·grace period 기본값~~ → **C3a에서 해소**: idle 임계 30s / 간격 10s / grace 10s / inFlightGuardMillis 옵션 확정. CDC 드레인 타임아웃 기본값은 C3b에서 확정.)
 - registry 키 일반화 형태(기존 `active/peek` 일반화 vs `forCoverageKey` 신설) 및 트레이서 모드 auto-create 플래그명.
 
 ---
