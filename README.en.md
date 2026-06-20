@@ -72,12 +72,18 @@ Test harness                          Target app JVM  (-javaagent:pjacoco-agent.
 > (once):
 >
 > ```bash
-> # Libraries + agent (shaded) + testkit + Gradle plugin → your local Maven repo
+> # One step — install agent, testkit (×4), the Gradle plugin AND the Maven plugin to mavenLocal
+> ./scripts/install-local.sh
+> ```
+>
+> (The script bundles Gradle `publishToMavenLocal` and Maven `install` so you can't end up half-installed
+> with a stale maven-plugin. To do it by hand:)
+>
+> ```bash
 > ./gradlew :agent:publishToMavenLocal \
 >   :testkit-core:publishToMavenLocal :testkit-junit5:publishToMavenLocal \
 >   :testkit-junit4:publishToMavenLocal :testkit-restassured:publishToMavenLocal \
 >   :gradle-plugin:publishToMavenLocal
-> # Maven plugin (resolves the agent installed above)
 > mvn -f maven-plugin/pom.xml install
 > ```
 >
@@ -244,6 +250,12 @@ gh release download --repo baekchangjoon/parallel-per-test-coverage --pattern 'p
 JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar    # → agent/build/libs/pjacoco-agent.jar
 ```
 
+> ⚠️ **v1.3.0 BREAKING — agent jar renamed:** `jacocoagent-parallel*.jar` → **`pjacoco-agent*.jar`** (= the
+> Maven artifactId `io.pjacoco:pjacoco-agent`). **Depend on the coordinate `io.pjacoco:pjacoco-agent`, not the
+> filename** — scripts that `find`/download by the old name will break. v1.3.0–v1.4.x releases also attach the
+> old name `jacocoagent-parallel-<ver>.jar` as a **deprecated alias asset** during the migration window (removed
+> afterwards).
+
 Attach it to the target app, then drive the control endpoint from the test harness:
 
 ```bash
@@ -377,8 +389,11 @@ whole-run aggregate file, failure isolation / memory cap / observability, jacoco
 
 **In-process path limitations**:
 - Coverage from work offloaded to async or thread-pool threads is not attributed to that test.
-- `@Test(timeout)` / `@Rule Timeout` run on a separate thread (under the JUnit 4 agent handling, that
-  test's `.exec` can come out empty).
+- `@Test(timeout)` / `@Rule Timeout` run on a separate thread (JUnit `FailOnTimeout`). **Behavior change
+  (v1.2.0+):** for loss visibility, that run is no longer discarded as an empty store but **flushed as an
+  `.exec` flagged `incompleteAttribution`** (+ sidecar) — previously there was no `.exec` at all. Scripts/tests
+  that assumed "timeout ⇒ no `.exec`" should be revisited (attribution is still partial; identify it via the
+  sidecar's `incompleteAttribution`).
 - JUnit 5 parameterized/repeated tests share one testId, so only the last invocation is kept.
 - Mixing the in-process and servlet paths in one test task: split them into separate tasks, or turn one
   off with the `autoDetectExtensions` / `junit4Auto` opt-out.

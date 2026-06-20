@@ -115,11 +115,16 @@ jobs:
           done
           # Maven plugin jar from the Maven build.
           cp "maven-plugin/target/pjacoco-maven-plugin-${VERSION}.jar" "dist/pjacoco-maven-plugin-${VERSION}.jar"
+          # DEPRECATED alias: the agent jar was renamed jacocoagent-parallel -> pjacoco-agent in v1.3.0.
+          # Ship the old filename too for a short deprecation window so name-based consumers (scripts that
+          # `find`/download by the old name) don't break on upgrade. Depend via the coordinate
+          # io.pjacoco:pjacoco-agent, NOT the filename. Remove this alias after v1.4.x (see docs/RELEASING.md).
+          cp "dist/pjacoco-agent-${VERSION}.jar" "dist/jacocoagent-parallel-${VERSION}.jar"
           # Checksums for every staged jar.
           ( cd dist && for j in *.jar; do sha256sum "$j" > "$j.sha256"; done )
           echo "Staged artifacts:"; ls -1 dist
           count="$(ls dist/*.jar | wc -l | tr -d ' ')"
-          test "$count" -eq 6 || { echo "::error::expected 6 jars (agent + 4 testkit + maven-plugin), staged $count."; exit 1; }
+          test "$count" -eq 7 || { echo "::error::expected 7 jars (agent + 4 testkit + maven-plugin + deprecated agent alias), staged $count."; exit 1; }
 
       - name: Create GitHub Release
         env:
@@ -154,6 +159,7 @@ jobs:
               echo "  - \`pjacoco-agent-${VERSION}.jar\`"
               echo "  - \`pjacoco-testkit-${VERSION}.jar\`, \`pjacoco-testkit-junit5-${VERSION}.jar\`, \`pjacoco-testkit-junit4-${VERSION}.jar\`, \`pjacoco-testkit-restassured-${VERSION}.jar\`"
               echo "  - \`pjacoco-maven-plugin-${VERSION}.jar\`"
+              echo "  - \`jacocoagent-parallel-${VERSION}.jar\` (DEPRECATED alias of the agent jar — depend via \`io.pjacoco:pjacoco-agent\`; removed after v1.4.x)"
               echo "- Release: $RELEASE_URL"
             else
               echo ""
