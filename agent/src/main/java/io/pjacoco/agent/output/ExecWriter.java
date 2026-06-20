@@ -14,6 +14,15 @@ import org.jacoco.core.data.SessionInfo;
 /** Serializes a TestStore snapshot to a vanilla-format {@code <testId>.exec} + {@code <testId>.json} sidecar. */
 public final class ExecWriter {
 
+    /** Drop-ratio above which a store is flagged {@code incompleteAttribution} (CLS-REQ-009). Default 0.0. */
+    private final double incompleteAttributionThreshold;
+
+    public ExecWriter() { this(0.0); }
+
+    public ExecWriter(double incompleteAttributionThreshold) {
+        this.incompleteAttributionThreshold = incompleteAttributionThreshold;
+    }
+
     /** @param status "complete" for a normal stop, "partial" for a shutdown-forced dump. */
     public void write(Path dir, TestStore store, String result, String commitSha,
                       long stoppedAtMillis, String status) throws Exception {
@@ -21,14 +30,16 @@ public final class ExecWriter {
         Map<Long, ClassProbes> snap = store.snapshot();
 
         Path exec = dir.resolve(store.testId() + ".exec");
+        long recordedProbes = 0;                         // count of probe hits captured for this test (ratio denom)
         OutputStream os = new BufferedOutputStream(Files.newOutputStream(exec));
         try {
             ExecutionDataWriter w = new ExecutionDataWriter(os);
             w.visitSessionInfo(new SessionInfo(store.testId(),
                     store.startedAtMillis(), stoppedAtMillis));
             for (Map.Entry<Long, ClassProbes> e : snap.entrySet()) {
-                w.visitClassExecution(new ExecutionData(
-                        e.getKey(), e.getValue().className(), e.getValue().probes()));
+                boolean[] probes = e.getValue().probes();
+                for (boolean hit : probes) { if (hit) recordedProbes++; }
+                w.visitClassExecution(new ExecutionData(e.getKey(), e.getValue().className(), probes));
             }
         } finally {
             os.close();
@@ -46,10 +57,16 @@ public final class ExecWriter {
                 .put("retryCount", store.retryCount())
                 .put("shardId", store.shardId())        // null -> omitted
                 .put("status", status);
-        if (store.droppedProbes() > 0) {                // CLS-REQ-008: additive, only when loss attributed
-            j.put("incompleteAttribution", true)
-             .put("droppedProbes", store.droppedProbes())
-             .put("attribution", store.attributionConservative() ? "conservative" : "exact");
+        long dropped = store.droppedProbes();
+        if (dropped > 0) {                              // CLS-REQ-008/009: additive, only when loss attributed
+            long denom = dropped + recordedProbes;
+            double ratio = denom == 0 ? 0.0 : (double) dropped / (double) denom;
+            j.put("droppedProbes", dropped)             // always exposed for visibility (CLS-REQ-009)
+             .put("recordedProbes", recordedProbes);
+            if (ratio > incompleteAttributionThreshold) {   // default 0.0 -> any drop flags (backward-compatible)
+                j.put("incompleteAttribution", true)
+                 .put("attribution", "exact");           // ambiguous (parallel) drops are no longer per-test (CLS-REQ-005)
+            }
         }
         String json = j.toString();
         Files.write(dir.resolve(store.testId() + ".json"), json.getBytes("UTF-8"));

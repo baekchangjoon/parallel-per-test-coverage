@@ -16,7 +16,6 @@ public final class TestStore {
     private long writes;                      // plain long: clock-free hot-path activity signal
     private volatile long lastActivityMillis; // reaper-written, enforceCap-read; init = startedAtMillis
     private final AtomicLong droppedProbes = new AtomicLong();   // probes lost on no-context threads, attributed here
-    private volatile boolean attributionConservative;            // true if any drop was attributed under concurrency
 
     public TestStore(String testId, long startedAtMillis, String shardId) {
         this.testId = testId;
@@ -59,9 +58,7 @@ public final class TestStore {
     public long lastActivityMillis() { return lastActivityMillis; }
     public void lastActivityMillis(long millis) { this.lastActivityMillis = millis; }
 
-    /** Called by DropAttributor when a no-context probe is attributed to this active store. */
+    /** Called by DropAttributor when a no-context probe is attributed to this active store (exact path only). */
     public void recordDrop() { droppedProbes.incrementAndGet(); }
-    public void markConservative() { attributionConservative = true; }
     public long droppedProbes() { return droppedProbes.get(); }
-    public boolean attributionConservative() { return attributionConservative; }
 }
