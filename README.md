@@ -225,6 +225,23 @@ java -javaagent:opentelemetry-javaagent.jar \
 >
 > OTel javaagent jar의 **파일명은 자유롭게 바꿔도 됩니다** (예: 컨테이너에서 `-javaagent:/opt/otel/otel.jar`로 마운트). pjacoco는 파일명이 아니라 jar 내부의 OTel shaded context-storage 클래스 존재로 javaagent를 식별합니다.
 
+### traceId → testId 매핑 등록 (C2)
+
+traceId를 사람이 읽는 `FQCN#method` testId에 대응시키려면 제어 엔드포인트를 사용합니다.
+
+```bash
+# traceId를 testId에 매핑 (테스트 시작 직후 러너/하네스에서 호출)
+POST /__coverage__/trace/map?traceId=<32hex>&testId=<FQCN%23method>
+```
+
+- 매핑이 등록되면 리포트 시 해당 커버리지가 `FQCN#method` 이름의 `.exec`로 산출됩니다.
+- **미등록 traceId**는 raw traceId 문자열을 그대로 testId로 사용합니다(리포트에 raw traceId 노출 — 의도된 폴백).
+- 한 testId에 여러 traceId를 등록할 수 있습니다(N:1 — 재시도·다수 outbound 호출). 러너가 `TraceCoverageMerger`를 오프라인으로 실행하면 같은 testId의 모든 traceId `.exec`를 `<testId>.exec` 하나로 OR-merge합니다.
+- JVM 종료 시 현재 매핑이 `<destfile>/trace-map.properties`로 덤프됩니다.
+- `maxTraceMappings`(기본 100000) LRU 상한을 초과하면 오래된 항목이 자동 축출됩니다.
+
+> **행위 변화 (C2):** `PjacocoExtension`(JUnit 5) 및 `PjacocoRule`(JUnit 4) 블랙박스 어댑터가 이제 testId를 `FQCN#method`(완전정규화 클래스명#메서드명)로 산출합니다 — 이전 SimpleClassName 형식과 달라질 수 있으므로 기존 `.exec` 파일명 패턴을 사용하는 스크립트는 확인하세요.
+
 ## 에이전트 직접 사용 (저수준)
 
 플러그인 없이 에이전트 jar를 직접 `-javaagent`로 다룰 수도 있습니다.
@@ -270,6 +287,7 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 | `aggregateFile` | 집계 파일 이름 또는 절대 경로 | `aggregate.exec` |
 | `junit4Auto` | JUnit 4 인-프로세스 테스트를 에이전트가 자동 처리 | `true` |
 | `traceKeyAutoCreate` | 트레이서(OTel/Brave) trace context를 coverage 키로 소비; 미등록 traceId 키 store 자동 생성 + Brave/OTel scope weave 설치 (비동기 per-test 귀속) | `false` |
+| `maxTraceMappings` | `POST /__coverage__/trace/map` 매핑 저장소의 LRU 상한. 장기 실행 서비스 OOM 방지. | `100000` |
 | `commitSha` | manifest 헤더에 기록(또는 env `PJACOCO_COMMIT`) | — |
 
 ## 산출물

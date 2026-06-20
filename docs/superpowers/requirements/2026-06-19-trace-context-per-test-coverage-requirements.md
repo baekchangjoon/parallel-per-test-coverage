@@ -234,15 +234,15 @@
 | REQ-008 | 모드 우선순위(통합 resolver) | `CoverageKeyResolverTest#{resolvePrefersFirstNonNull, resolveNullWhenAllEmpty, throwingSourceIsSkipped}` + `ServletAdviceTest#{activatesResolvedStoreFromBaggage, strictUnregisteredLeavesContextUnset, noHeaderOrNonHttpIgnored}`. 참조: `docs/superpowers/decisions/2026-06-19-deactivate-clear-semantics.md` | unit | 🟢 green |
 | REQ-009 | cross-thread scope close | `TraceScopeBridgeTest#closeOnOtherThreadDoesNotCorrupt` | unit | 🟢 green |
 | REQ-010 | valid trace만, invalid 폴백(백엔드별) | `OtelTestIdSourceTest#{invalidSpanFallsBackToNull, validSpanReturnsTraceId, throwingSeamFallsBackToNull}` + `BraveTestIdSourceTest#{nullContextFallsBack, validContextReturnsTraceId, emptyStringFallsBack, throwingSeamFallsBack}` | unit | 🟢 green |
-| REQ-011 | 매핑 등록 endpoint(bounded) | `TraceMapEndpointIT#{registeredShown,boundedEviction}` | integration | 🔴 planned |
-| REQ-012 | 미등록 raw traceId | `UnmappedTraceE2E#rawTraceIdAsTestId` | E2E | 🔴 planned |
-| REQ-013 | N:1 병합 | `TraceMergeTest#multipleTraceIdsOneTestId` | integration | 🔴 planned |
-| REQ-014 | testId 정규화 | `TestIdNormalizationTest#toFqcnHashMethod` | unit | 🔴 planned |
+| REQ-011 | 매핑 등록 endpoint(bounded) | `TraceMapEndpointIT#{registeredShown, boundedEvictionThroughEndpoint}` — registeredShown: 등록→merge→`<FQCN#method>.exec` 존재까지 full-path 검증; boundedEvictionThroughEndpoint: HTTP 연속 POST cap=2 초과로 LRU eviction 확인 | integration | 🟢 green |
+| REQ-012 | 미등록 raw traceId | `UnmappedTraceReportIT#rawTraceIdAsTestId` + `TraceCoverageMergerTest#unmappedTraceFallsBackToRawAndCounts` — 분산 인프라는 C3 범위라 최고 실현가능 레벨은 integration(transport-독립 리포트 레이어 검증) | integration (최고 실현가능) | 🟢 green |
+| REQ-013 | N:1 병합 | `TraceCoverageMergerTest#multipleTraceIdsOneTestId` (+ `aggregateExecAndDirsAreExcluded` 부가 증거) | integration | 🟢 green |
+| REQ-014 | testId 정규화 | `TestIdNormalizationTest#toFqcnHashMethod` (unit) + `PjacocoExtensionTest`/`PjacocoRuleTest` (어댑터 FQCN 정렬 확인) | unit + integration | 🟢 green |
 | REQ-015 | 서비스 간 병합 리포트 | `LegacyTramDistributedE2E` + `TaintedSpringDistributedE2E` | E2E | 🔴 planned |
 | REQ-016 | flush 생명주기(idle reaper) | `TraceStoreLifecycleIT#idleReaperFlushWithoutJvmExit` | integration/E2E | 🔴 planned |
 | REQ-017 | late-write grace | `LateWriteGraceIT#lateWriteNotLost` | integration | 🔴 planned |
 | REQ-018 | in-flight eviction 방지 | `TraceEvictionIT#idleEvictedBeforeInFlight` | integration | 🔴 planned |
-| REQ-019 | 관측성 카운터 | `MetricsTest#{scopeHookInjectionFailuresStartsAtZero, fallbackActivationsStartsAtZero, summaryIncludesNewCounters, installFailureIncrementsCounterAndDoesNotPropagate}`. C1 부분: scopeHookInjectionFailures+fallbackActivations 완료; 나머지 카운터(unmappedTraceIds, evictedInFlightTraces)는 C3 | unit/integration | 🟡 partial |
+| REQ-019 | 관측성 카운터 | `MetricsTest#{scopeHookInjectionFailuresStartsAtZero, fallbackActivationsStartsAtZero, summaryIncludesNewCounters, installFailureIncrementsCounterAndDoesNotPropagate, unmappedTraceIdsStartsAtZeroAndCounts}`. C1: scopeHookInjectionFailures+fallbackActivations 완료; C2: unmappedTraceIds 완료; C3: evictedInFlightTraces | unit/integration | 🟡 partial |
 | REQ-022 | 트레이서 모드 store 자동생성 | `TestStoreRegistryTest#{forCoverageKeyAutoCreatesWhenEnabled, forCoverageKeyStrictReturnsNullWhenDisabled}` | unit | 🟢 green |
 | REQ-023 | C3 수집 + drain 대기 | `DistributedCollectIT#downstreamCollectedAfterDrain` | E2E | 🔴 planned |
 | REQ-024 | scope-fail 동기 폴백 | GA-1 PASS → scope weave가 주 경로; choke-point 폴백 미발동, C3에서 분산 안전망으로 재평가. | integration | 🔵 deferred |
@@ -255,6 +255,11 @@
 - REQ-024 (Should): **🔵 deferred** — GA-1 PASS로 choke-point 폴백 경로 불필요, C3 재평가 → 분모 제외
 - **C1 Must 커버리지: 12/12 (100%)**
 
-Coverage(전체): C1 Must 12/12 🟢; C1 Should REQ-019 🟡 partial; C2/C3 REQ 🔴 planned. 제외: Won't 2 (🔵 REQ-020, REQ-021), deferred 1 (🔵 REQ-024).
+**C2 완료 상태 (DoD):**
+- C2 Must REQ-011, REQ-012: **2/2 🟢**
+- C2 Should REQ-013, REQ-014: **2/2 🟢**
+- **C2 Must+Should 커버리지: 4/4 (100%)** — REQ-019 추가 전진(unmappedTraceIds C2 완료, 여전히 🟡 partial)
+
+Coverage(전체): C1 Must 12/12 🟢; C2 Must+Should 4/4 🟢; REQ-019 🟡 partial; C3 REQ 🔴 planned. 제외: Won't 2 (🔵 REQ-020, REQ-021), deferred 1 (🔵 REQ-024).
 
 (Must: 001,002,003,004,005,006,007,008,009,010,011,012,015,016,022,023 = 16. Should: 013,014,017,018,019,024 = 6. C1 Must 대상: 001,002,003,004,005,006,007,008,009,010,022 = 11 + REQ-022 = 12.)
