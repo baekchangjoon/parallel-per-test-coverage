@@ -73,6 +73,21 @@ jobs:
             exit 1
           fi
 
+      # P1-2 guard: the released version MUST equal the source default in build.gradle.kts, so that anyone
+      # who clones this tag and builds (e.g. publishToMavenLocal from the tag commit) produces the SAME
+      # version as the release artifacts. A workflow `version` input that differs from the committed source
+      # default would tag a commit whose source still says the old version — a silent version skew.
+      - name: Verify source version matches the release version
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          SOURCE_VERSION="$(./gradlew -q --no-daemon properties | awk -F': ' '/^version: /{print $2}')"
+          if [ "$SOURCE_VERSION" != "$VERSION" ]; then
+            echo "::error::Release version '$VERSION' != build.gradle.kts source version '$SOURCE_VERSION'. Bump the source default (and the consumable refs per docs/RELEASING.md) to '$VERSION' and commit it on this ref before releasing, so a tag-clone build produces matching artifacts."
+            exit 1
+          fi
+          echo "Source version matches release version: $VERSION"
+
       - name: Build + test the release artifacts
         env:
           VERSION: ${{ steps.ver.outputs.version }}

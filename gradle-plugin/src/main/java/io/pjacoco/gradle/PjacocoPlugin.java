@@ -22,10 +22,33 @@ import org.gradle.process.JavaForkOptions;
  */
 public class PjacocoPlugin implements Plugin<Project> {
 
-    /** Default agent version when {@code agentVersion} is not set. */
-    public static final String DEFAULT_AGENT_VERSION = "1.3.0";
+    /** Default agent version when {@code agentVersion} is not set. Single-sourced from the plugin's OWN
+     *  version (generated resource {@code io/pjacoco/gradle/version.properties}), so the agent it resolves
+     *  always matches the plugin release — no hardcoded constant to forget on a version bump (P1-1). */
+    public static final String DEFAULT_AGENT_VERSION = loadOwnVersion();
 
     static final String CONFIGURATION_NAME = "pjacocoAgent";
+
+    private static String loadOwnVersion() {
+        try (java.io.InputStream in =
+                     PjacocoPlugin.class.getResourceAsStream("/io/pjacoco/gradle/version.properties")) {
+            if (in != null) {
+                java.util.Properties props = new java.util.Properties();
+                props.load(in);
+                String v = props.getProperty("version");
+                if (v != null && !v.isEmpty() && !v.contains("${")) {
+                    return v;
+                }
+            }
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // fall through to the explicit unknown marker — never let a static-init failure (e.g. a
+            // malformed resource) become an ExceptionInInitializerError that breaks the whole plugin.
+        }
+        // Resource missing (e.g. running the plugin classes without processResources): fail LOUD at
+        // resolve time ("pjacoco-agent:0.0.0-UNKNOWN not found") rather than silently using a stale
+        // version. Normal builds/jars always carry the generated resource.
+        return "0.0.0-UNKNOWN";
+    }
 
     @Override
     public void apply(Project project) {

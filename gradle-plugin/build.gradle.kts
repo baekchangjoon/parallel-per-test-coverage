@@ -10,6 +10,27 @@ java {
     targetCompatibility = JavaVersion.VERSION_11
 }
 
+// Single-source the plugin's own version into a runtime resource so PjacocoPlugin.DEFAULT_AGENT_VERSION
+// tracks it automatically — there is no hardcoded version constant to forget on a release bump (P1-1:
+// a missed DEFAULT_AGENT_VERSION bump previously broke CI with "agent:1.1.0 not found").
+val generateVersionResource = tasks.register("generateVersionResource") {
+    val versionValue = project.version.toString()
+    val outFile = layout.buildDirectory.file("generated/pjacoco-version/version.properties")
+    inputs.property("version", versionValue)
+    outputs.file(outFile)
+    doLast {
+        val out = outFile.get().asFile
+        out.parentFile.mkdirs()
+        out.writeText("version=$versionValue\n")
+    }
+}
+// Wire the generated file into the processed resources (build/resources/main) with an automatic task
+// dependency. Done via processResources.from(task) — NOT a sourceSet resources srcDir — so it lands on the
+// runtime classpath without being pulled into sourcesJar (which would need its own task dependency).
+tasks.named<ProcessResources>("processResources") {
+    from(generateVersionResource) { into("io/pjacoco/gradle") }
+}
+
 repositories { mavenCentral() }
 
 dependencies {

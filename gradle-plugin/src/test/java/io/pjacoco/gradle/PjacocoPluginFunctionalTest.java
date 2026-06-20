@@ -28,7 +28,7 @@ class PjacocoPluginFunctionalTest {
 
     @Test
     void pluginAttachesAgentAndProducesPerTestExec(@TempDir Path consumer) throws IOException {
-        String version = System.getProperty("pjacoco.it.version", "1.0.0");
+        String version = ItSupport.itVersion();
         Path repo = Files.createDirectories(consumer.resolve("flatrepo"));
         // flatDir resolves group:name:version -> name-version.jar (group ignored).
         Files.copy(Path.of(System.getProperty("pjacoco.it.agentJar")), repo.resolve("pjacoco-agent-" + version + ".jar"));

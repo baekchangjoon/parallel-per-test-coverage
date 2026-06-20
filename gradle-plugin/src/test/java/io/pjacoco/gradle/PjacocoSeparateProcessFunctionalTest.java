@@ -23,7 +23,7 @@ class PjacocoSeparateProcessFunctionalTest {
 
     @Test
     void agentJvmArgWiredOntoASeparateJvmProducesPerTestExec(@TempDir Path consumer) throws IOException {
-        String version = System.getProperty("pjacoco.it.version", "1.1.0");
+        String version = ItSupport.itVersion();
         Path repo = Files.createDirectories(consumer.resolve("flatrepo"));
         Files.copy(Path.of(System.getProperty("pjacoco.it.agentJar")), repo.resolve("pjacoco-agent-" + version + ".jar"));
         Files.copy(Path.of(System.getProperty("pjacoco.it.testkitJar")), repo.resolve("pjacoco-testkit-" + version + ".jar"));
