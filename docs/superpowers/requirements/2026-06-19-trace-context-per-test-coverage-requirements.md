@@ -156,7 +156,7 @@
 - 설명: N개 서비스 JVM의 per-traceId `.exec`가 중앙 collector로 모이는 메커니즘을 baseline 하나 이상 제공한다(공유 볼륨 / control-pull HTTP / CI 아티팩트 중 plan에서 택1). 병합은 비동기(Tram/CDC/Kafka) 지연을 고려해 **drain-wait 타임아웃** 이후 실행한다.
 - 수용기준:
   - Given 다운스트림 커버리지가 비동기로 늦게 도착하는 분산 실행, When drain-wait 타임아웃 후 수집·병합하면, Then 다운스트림 서비스의 `.exec`가 누락 없이 중앙 리포트에 포함된다.
-- 검증 레벨: E2E black-box (legacy-tram/tainted-spring)
+- 검증 레벨: integration (최고 실현가능 — drain-wait 늦은-도착 흡수는 주입 Sleeper로 결정론 검증; Docker CDC 지연은 분산 E2E에서 부수 실측). [C3b 역전파: 원 'E2E black-box'에서 강등]
 
 ### REQ-016 — trace-store flush 생명주기 (장기 실행 서비스)
 - 유형: Functional
