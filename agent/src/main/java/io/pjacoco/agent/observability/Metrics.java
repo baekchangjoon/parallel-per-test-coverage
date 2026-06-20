@@ -16,6 +16,8 @@ public final class Metrics {
     /** Incremented when a per-trace store is reported without a registered traceId->testId mapping
      *  (the raw traceId is used as the testId). */
     public final AtomicLong unmappedTraceIds = new AtomicLong();
+    /** Incremented when the store cap forces eviction of a still-active (in-flight) trace store. */
+    public final AtomicLong evictedInFlightTraces = new AtomicLong();
 
     public String summary() {
         return "[pjacoco] summary: completed=" + testsCompleted.get()
@@ -25,6 +27,7 @@ public final class Metrics {
                 + " retries=" + retriesOverwritten.get()
                 + " scopeHookInjectFail=" + scopeHookInjectionFailures.get()
                 + " fallbackActivations=" + fallbackActivations.get()
-                + " unmapped=" + unmappedTraceIds.get();
+                + " unmapped=" + unmappedTraceIds.get()
+                + " evictedInFlight=" + evictedInFlightTraces.get();
     }
 }

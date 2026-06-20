@@ -88,4 +88,13 @@ class MetricsTest {
         m.unmappedTraceIds.incrementAndGet();
         assertTrue(m.summary().contains("unmapped=1"));
     }
+
+    // REQ-019: evictedInFlightTraces counter starts at 0 and is incrementable
+    @Test
+    void evictedInFlightTracesStartsAtZeroAndCounts() {
+        Metrics m = new Metrics();
+        assertEquals(0L, m.evictedInFlightTraces.get());
+        m.evictedInFlightTraces.incrementAndGet();
+        assertTrue(m.summary().contains("evictedInFlight=1"));
+    }
 }
