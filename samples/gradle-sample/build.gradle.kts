@@ -1,6 +1,6 @@
 plugins {
     java
-    id("io.pjacoco.gradle") version "1.1.0"
+    id("io.pjacoco.gradle") version "1.2.0"
 }
 
 repositories {
@@ -8,7 +8,7 @@ repositories {
     mavenCentral()
 }
 
-val pjacocoVersion = "1.1.0"
+val pjacocoVersion = "1.2.0"
 dependencies {
     testImplementation("io.pjacoco:pjacoco-testkit-junit5:$pjacocoVersion")
     testImplementation("io.pjacoco:pjacoco-testkit-junit4:$pjacocoVersion")

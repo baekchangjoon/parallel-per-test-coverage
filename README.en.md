@@ -95,15 +95,15 @@ examples: [`samples/gradle-sample`](samples/gradle-sample) · [`samples/maven-sa
 **Gradle** (`build.gradle.kts`):
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.1.0" }
+plugins { id("io.pjacoco.gradle") version "1.2.0" }
 
 pjacoco {
     includes.set(listOf("com.example.*"))
     attachTo.set(listOf("integrationTest"))   // inject the agent + control-url into this test JVM
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.1.0")
-    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.1.0")
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.2.0")
+    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.2.0")
 }
 ```
 
@@ -123,7 +123,7 @@ class OwnerBlackBoxIT {
 
 ```xml
 <plugin>
-  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.1.0</version>
+  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.2.0</version>
   <executions><execution><goals><goal>prepare-agent</goal></goals></execution></executions>
   <configuration><includes><include>com.example.*</include></includes></configuration>
 </plugin>
@@ -158,14 +158,14 @@ below). JUnit 4 is handled by the agent, so it needs no `@Rule` either.
 > [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.1.0" }
+plugins { id("io.pjacoco.gradle") version "1.2.0" }
 
 pjacoco {
     attachTo.set(listOf("test"))          // the test task(s) to inject the agent into
     includes.set(listOf("com.example.*")) // the in-process path needs no control-url
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.1.0")   // JUnit 5 applied automatically
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.2.0")   // JUnit 5 applied automatically
     // JUnit 4 works from the agent alone — no dependency, no @Rule
 }
 ```
