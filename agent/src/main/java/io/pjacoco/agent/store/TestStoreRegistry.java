@@ -123,6 +123,21 @@ public final class TestStoreRegistry {
         metrics.testsCompleted.incrementAndGet();
     }
 
+    /** Race-safe stop: under the registry lock, remove then re-read droppedProbes; discard only a
+     *  truly empty store (no class probes AND no attributed drops), else flush so the loss is visible. */
+    public synchronized void stopUnlessEmpty(String testId, String result) {
+        TestStore s = stores.remove(testId);
+        if (s == null) {
+            log.warn("stop-missing", "stopUnlessEmpty for unknown testId=" + testId);
+            return;
+        }
+        if (s.classCount() == 0 && s.droppedProbes() == 0) {
+            return;                                  // truly empty -> discard (no garbage file)
+        }
+        flush(s, result, "complete");
+        metrics.testsCompleted.incrementAndGet();
+    }
+
     /** Called from the shutdown hook for any un-stopped stores. */
     public synchronized void dumpRemainingAsPartial() {
         for (Iterator<Map.Entry<String, TestStore>> it = stores.entrySet().iterator(); it.hasNext(); ) {

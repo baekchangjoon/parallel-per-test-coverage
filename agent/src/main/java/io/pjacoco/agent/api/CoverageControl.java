@@ -49,7 +49,7 @@ public final class CoverageControl {
         }
     }
 
-    /** Clear the thread context and flush the per-test {@code .exec}; an empty store is discarded. */
+    /** Clear the thread context and flush via the registry (race-safe empty-store guard lives there). */
     public static void deactivate(String testId, String result) {
         try {
             CoverageContext.clear();
@@ -57,12 +57,7 @@ public final class CoverageControl {
             if (reg == null || testId == null) {
                 return;
             }
-            TestStore store = reg.peek(testId);
-            if (store != null && store.classCount() == 0) {
-                reg.discard(testId);   // empty-store guard: no garbage file (NOT in the shared writer)
-            } else {
-                reg.stop(testId, result);
-            }
+            reg.stopUnlessEmpty(testId, result);
         } catch (Throwable ignored) {
             // never disturb the test
         }
