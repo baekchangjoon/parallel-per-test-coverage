@@ -184,13 +184,12 @@
 
 ### Degradation
 
-### REQ-024 — scope 훅 주입 실패 시 동기 경로 choke-point 폴백
+### REQ-024 — scope 훅 주입 실패 시 동기 경로 choke-point 폴백 — 🗑️ **RETIRED(불요 확정, 2026-06-20)**
 - 유형: Functional
-- 우선순위: Should
-- 설명: GA-1 실패(scope 훅 주입 불가) 시, servlet 진입점에서 traceId를 read해 동기 HTTP 경로 커버리지를 올바른 traceId 키로 귀속한다(async/Kafka/@Async는 미커버 — 한계 노출). 무신호 0-커버리지로 떨어지지 않음을 보장.
-- 수용기준:
-  - Given OTel/Brave 존재하나 scope 훅 주입이 비활성, When 동기 servlet 요청이 발생하면, Then 그 요청 커버리지가 servlet 진입에서 read한 traceId 키에 나타난다(0이 아님).
-- 검증 레벨: integration
+- 우선순위: Should → **폐기**
+- **폐기 근거:** GA-1(scope 훅 주입)이 Brave·OTel 모두 PASS했고, 분산 E2E(`LegacyTramDistributedE2E`)가 scope-weave 경로를 **async/Kafka/cross-service 포함** 실증(다운스트림 ledger 귀속). 즉 scope weave가 주 경로로 견고히 동작하므로, GA-1 실패를 전제로 한 동기 choke-point 폴백은 **발동될 일이 없고 가치가 없다.** "C3에서 재평가"가 본 결정으로 종결. ID는 보존(재사용 금지).
+- (원 설명) GA-1 실패 시 servlet 진입점에서 traceId를 read해 동기 HTTP 경로 커버리지를 귀속하려던 degradation 안전망. scope weave가 모든 경로(async 포함)를 커버해 불필요.
+- 검증 레벨: — (폐기, 분모 제외)
 
 ### 관측성
 
@@ -238,21 +237,21 @@
 | REQ-012 | 미등록 raw traceId | `UnmappedTraceReportIT#rawTraceIdAsTestId` + `TraceCoverageMergerTest#unmappedTraceFallsBackToRawAndCounts` — 분산 인프라는 C3 범위라 최고 실현가능 레벨은 integration(transport-독립 리포트 레이어 검증) | integration (최고 실현가능) | 🟢 green |
 | REQ-013 | N:1 병합 | `TraceCoverageMergerTest#multipleTraceIdsOneTestId` (+ `aggregateExecAndDirsAreExcluded` 부가 증거) | integration | 🟢 green |
 | REQ-014 | testId 정규화 | `TestIdNormalizationTest#toFqcnHashMethod` (unit) + `PjacocoExtensionTest`/`PjacocoRuleTest` (어댑터 FQCN 정렬 확인) | unit + integration | 🟢 green |
-| REQ-015 | 서비스 간 병합 리포트 | `DistributedCoverageMergerTest#{perServicePerTestIdReport, multipleTraceIdsOneTestIdWithinServiceMerged, unmappedTraceIdFallsBackToRawPerService}`(서비스 축 병합 메커니즘) + `TraceMergeMainTest`(CLI) + **`LegacyTramDistributedE2E#crossServiceCoverageMerged`**(live Brave 3-서비스: order-web+reservation+ledger downstream 귀속, classCount 6/6/2, 2026-06-20 실측). OTel E2E 테스트(`TaintedSpringDistributedE2E`)는 미구현 — OTel Kafka 전파 메커니즘은 C1/GA-2 cross-JVM 실측으로 검증됨; 필요 시 동일 패턴으로 추가 가능. | E2E black-box (live legacy-tram) | 🟢 green |
+| REQ-015 | 서비스 간 병합 리포트 | `DistributedCoverageMergerTest#{perServicePerTestIdReport, multipleTraceIdsOneTestIdWithinServiceMerged, unmappedTraceIdFallsBackToRawPerService}`(서비스 축 병합 메커니즘) + `TraceMergeMainTest`(CLI) + **양 벡터 live 실측(2026-06-20)**: `LegacyTramDistributedE2E#crossServiceCoverageMerged`(Brave: order-web+reservation+ledger downstream, classCount 6/6/2) + `TaintedSpringDistributedE2E#crossServiceCoverageMerged`(OTel: diary+mindgraph Kafka-consumer downstream, 842B/1072B). 요구사항의 Brave·OTel 두 수용 벡터 모두 충족. | E2E black-box (live: legacy-tram Brave + tainted-spring OTel) | 🟢 green |
 | REQ-016 | flush 생명주기(idle reaper) | `TraceStoreLifecycleIT#idleReaperFlushWithoutJvmExit` + `TraceStoreReaperTest#{idleStoreFlushedWithoutJvmExit, idleStoreEvictedAfterGrace}` — 주입 clock으로 결정론, Docker 다중서비스는 C3b. 비고: 기존 control stop(`/test/stop`)은 즉시 flush 수단으로 유지; design §6.4 (b) scope-close flush는 C3a 범위 외 | integration | 🟢 green |
 | REQ-017 | late-write grace | `TraceStoreReaperTest#lateWriteWithinGraceIsReflushedNotLost` | integration | 🟢 green |
 | REQ-018 | in-flight eviction 방지 | `TestStoreRegistryEvictionTest#{idleEvictedBeforeInFlight, unavoidableInFlightEvictionIsCounted}` — 비고: 비-트레이서 모드에서 lastActivityMillis = startedAtMillis → idle-first == oldest-start, 무회귀 | integration | 🟢 green |
 | REQ-019 | 관측성 카운터 | `MetricsTest#{scopeHookInjectionFailuresStartsAtZero, fallbackActivationsStartsAtZero, summaryIncludesNewCounters, installFailureIncrementsCounterAndDoesNotPropagate, unmappedTraceIdsStartsAtZeroAndCounts, evictedInFlightTracesStartsAtZeroAndCounts}`. C1+C2+C3a 전 카운터 완료 | unit/integration | 🟢 green |
 | REQ-022 | 트레이서 모드 store 자동생성 | `TestStoreRegistryTest#{forCoverageKeyAutoCreatesWhenEnabled, forCoverageKeyStrictReturnsNullWhenDisabled}` | unit | 🟢 green |
 | REQ-023 | C3 수집 + drain 대기 | `DistributedCollectIT#downstreamCollectedAfterDrain`(drain-wait 중 늦은 다운스트림 `.exec` 무유실 수집, 주입 Sleeper 결정론) | integration(최고 실현가능; Docker CDC는 분산 E2E에서 부수 실측) | 🟢 green |
-| REQ-024 | scope-fail 동기 폴백 | GA-1 PASS → scope weave가 주 경로; choke-point 폴백 미발동, C3에서 분산 안전망으로 재평가. | integration | 🔵 deferred |
+| REQ-024 | scope-fail 동기 폴백 | 🗑️ **RETIRED(불요)** — GA-1 PASS + 분산 E2E가 scope-weave를 async/cross-service 포함 실증 → choke-point 폴백 무가치. C3 재평가 종결, ID 보존(재사용 금지). | — | 🗑️ retired |
 | REQ-020 | [Won't] messaging activator | — | — | 🔵 out-of-scope |
 | REQ-021 | [Won't] 운영 per-request | — | — | 🔵 out-of-scope |
 
 **C1 완료 상태 (DoD):**
 - C1 Must REQ-001~010, REQ-022: **12/12 🟢** (분모 12, 분자 12)
 - REQ-019 (미연기 Should): **🟢** — 전 카운터 완료: C1(scopeHookInjectionFailures + fallbackActivations) + C2(unmappedTraceIds) + C3a(evictedInFlightTraces)
-- REQ-024 (Should): **🔵 deferred** — GA-1 PASS로 choke-point 폴백 경로 불필요, C3 재평가 → 분모 제외
+- REQ-024 (Should): **🗑️ retired(불요 확정)** — GA-1 PASS + 분산 E2E가 scope-weave를 실증 → choke-point 폴백 무가치, C3 재평가 종결 → 분모 제외(ID 보존)
 - **C1 Must 커버리지: 12/12 (100%)**
 
 **C2 완료 상태 (DoD):**
@@ -267,8 +266,11 @@
 - REQ-019 (Should) 🟢: C1+C2+C3a 전 카운터 완료 (evictedInFlightTraces C3a에서 추가)
 - **C3a Must+Should(대상) 커버리지: 4/4 (100%)**
 
-Coverage(전체): C1 Must 12/12 🟢; C2 Must+Should 4/4 🟢; C3a REQ-016/017/018/019 4/4 🟢; **C3b: REQ-023 🟢, REQ-015 🟢**(live legacy-tram Brave 3-서비스 E2E: order-web+reservation+ledger downstream, classCount 6/6/2). 제외: Won't 2 (🔵 REQ-020, REQ-021), deferred 1 (🔵 REQ-024). **in-scope 24/24 🟢 (매트릭스 100%)**
+Coverage(전체): C1 Must 12/12 🟢; C2 Must+Should 4/4 🟢; C3a REQ-016/017/018/019 4/4 🟢; **C3b: REQ-023 🟢, REQ-015 🟢**(live 양 벡터: legacy-tram Brave order-web+reservation+ledger 6/6/2, tainted-spring OTel diary+mindgraph 842B/1072B). 제외: Won't 2 (🔵 REQ-020, REQ-021), retired 1 (🗑️ REQ-024, 불요 확정). **in-scope 전부 🟢 (매트릭스 100%)**
 
-**C3b 완료 상태:** REQ-023 🟢, REQ-015 🟢. `LegacyTramDistributedE2E#crossServiceCoverageMerged`가 legacy-tram Brave 3-서비스 Docker 스택(order-web→reservation→Kafka/CDC→ledger)에서 REQ-015 수용기준을 실증 통과(2026-06-20): downstream ledger 서비스의 커버리지가 동일 testId로 귀속(classCount order-web=6, reservation=6, ledger=2). OTel E2E 테스트(`TaintedSpringDistributedE2E`)는 미구현 — OTel Kafka 전파 메커니즘은 C1/GA-2 cross-JVM 실측으로 검증됨; 필요 시 동일 패턴으로 추가 가능. **C3b Must 대상 2/2 🟢 — 매트릭스 100% 완성(in-scope 24/24 🟢)**.
+**C3b 완료 상태:** REQ-023 🟢, REQ-015 🟢 (**Brave·OTel 양 벡터 live 실측, 2026-06-20**).
+- **Brave** `LegacyTramDistributedE2E`: legacy-tram 3-서비스(order-web→reservation→Kafka/CDC→ledger), downstream ledger 귀속 classCount 6/6/2.
+- **OTel** `TaintedSpringDistributedE2E`: tainted-spring(diary→Kafka `diary.created`→mindgraph `DiaryCreatedConsumer`, 별도 JVM), downstream mindgraph 귀속 842B/1072B. OTel javaagent 2.11.0 + pjacoco 이중 주입(GA-3 순서), W3C traceparent.
+- 두 E2E 모두 재현 스크립트(`agent/e2e/{legacy-tram,tainted-spring}-distributed-coverage.sh`) + `assumeTrue`(Docker+env) gated JUnit. **C3b Must 2/2 🟢 — 매트릭스 100% 완성(in-scope 전부 🟢, REQ-024 retired)**.
 
 (Must: 001,002,003,004,005,006,007,008,009,010,011,012,015,016,022,023 = 16. Should: 013,014,017,018,019,024 = 6. C1 Must 대상: 001,002,003,004,005,006,007,008,009,010,022 = 11 + REQ-022 = 12.)
