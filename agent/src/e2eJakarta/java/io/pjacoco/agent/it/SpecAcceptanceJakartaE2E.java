@@ -43,7 +43,7 @@ import org.junit.jupiter.api.Test;
  *
  * <p>
  * Drives a real Jetty 11 app whose servlet extends {@code jakarta.servlet.http.HttpServlet} through
- * the real {@code -javaagent:jacocoagent-parallel.jar} and asserts per-test isolation via the
+ * the real {@code -javaagent:pjacoco-agent.jar} and asserts per-test isolation via the
  * {@code .exec} files on disk. This proves the agent's inbound hook recognises the jakarta servlet
  * choke point (the javax-only matcher would record nothing here). It uses its own control port and
  * output directory so it can run alongside the javax {@code e2eTest}.

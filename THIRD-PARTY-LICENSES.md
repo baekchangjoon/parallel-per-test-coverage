@@ -2,7 +2,7 @@
 
 The pjacoco project's own source code is licensed under the **MIT License** (see [`LICENSE`](LICENSE)).
 
-The **distributed agent jar** (`io.pjacoco:pjacoco-agent`, i.e. the `-javaagent:jacocoagent-parallel.jar`)
+The **distributed agent jar** (`io.pjacoco:pjacoco-agent`, i.e. the `-javaagent:pjacoco-agent.jar`)
 additionally **embeds** the following third-party components, relocated into the `io.pjacoco.shaded.*`
 namespace. Their original license and notice files are preserved inside the jar (`about.html`,
 `META-INF/NOTICE`, `META-INF/licenses/`, and the original Maven metadata under

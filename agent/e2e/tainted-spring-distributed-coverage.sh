@@ -20,7 +20,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TAINTED_SPRING_ROOT="${TAINTED_SPRING_ROOT:-${HOME}/github_tainted-spring/tainted-spring-platform}"
-AGENT_JAR="${REPO_ROOT}/agent/build/libs/jacocoagent-parallel.jar"
+AGENT_JAR="${REPO_ROOT}/agent/build/libs/pjacoco-agent.jar"
 OTEL_JAR="${TAINTED_SPRING_ROOT}/jacoco/opentelemetry-javaagent.jar"
 
 FIXED_TRACE_ID="cccccccccccccccccccccccccccccccc"   # 32-hex W3C traceId

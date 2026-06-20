@@ -40,11 +40,14 @@ is part of the deferred public-publish work (REQ-D03).
 
 ## Public release (credentials-gated) — NOT yet wired into `release.yml` (deferred: REQ-D03)
 
-> Status (2026-06-20): `release.yml` currently publishes **only the agent shaded jar** to a GitHub
-> Release. The public-repository upload steps below are **not yet in the workflow** — they are the
-> deferred, credentials-gated follow-up tracked as REQ-D03 in
-> `docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md`. Until then,
-> consume every other module via `publishToMavenLocal` (see "Local validation" above).
+> Status (2026-06-20): as of **v1.3.0**, `release.yml` attaches the **agent shaded jar + the four
+> testkit jars (`pjacoco-testkit[-junit5|-junit4|-restassured]`) + the maven-plugin jar** to the GitHub
+> Release (named by their Maven artifactId, e.g. `pjacoco-agent-1.3.0.jar`). What is still **not** wired
+> is the **public-repository upload** (Maven Central / Gradle Plugin Portal) below — the deferred,
+> credentials-gated follow-up tracked as REQ-D03 in
+> `docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md`. Until that lands,
+> consume the modules via `publishToMavenLocal` or grab the GitHub Release jars directly (the Gradle
+> plugin id still resolves only via the Plugin Portal / mavenLocal).
 
 Once wired, these steps will run from the `release` workflow and only execute when the corresponding
 secrets exist.

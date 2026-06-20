@@ -73,20 +73,38 @@ jobs:
             exit 1
           fi
 
-      - name: Build + test the agent jar
+      - name: Build + test the release artifacts
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-        run: ./gradlew --no-daemon "-PreleaseVersion=$VERSION" :agent:test :agent:shadowJar
+        run: |
+          # Agent (shaded, tested) + testkit jars to the local Maven repo (named by artifactId).
+          ./gradlew --no-daemon "-PreleaseVersion=$VERSION" \
+            :agent:test :agent:shadowJar \
+            :agent:publishToMavenLocal \
+            :testkit-core:publishToMavenLocal :testkit-junit5:publishToMavenLocal \
+            :testkit-junit4:publishToMavenLocal :testkit-restassured:publishToMavenLocal
+          # Maven plugin jar (resolves io.pjacoco:pjacoco-agent:$VERSION from the mavenLocal step above).
+          mvn -B -ntp -f maven-plugin/pom.xml -DskipTests "-Dpjacoco.agent.version=$VERSION" package
 
       - name: Stage versioned artifacts
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          SRC=agent/build/libs/jacocoagent-parallel.jar
-          test -f "$SRC" || { echo "::error::Expected $SRC was not produced by shadowJar."; exit 1; }
           mkdir -p dist
-          cp "$SRC" "dist/jacocoagent-parallel-${VERSION}.jar"
-          ( cd dist && sha256sum "jacocoagent-parallel-${VERSION}.jar" > "jacocoagent-parallel-${VERSION}.jar.sha256" )
+          M2="$HOME/.m2/repository/io/pjacoco"
+          # Agent shaded jar (the build output is the same artifact published as io.pjacoco:pjacoco-agent).
+          cp "agent/build/libs/pjacoco-agent.jar" "dist/pjacoco-agent-${VERSION}.jar"
+          # Testkit jars from mavenLocal (artifactId-named).
+          for a in pjacoco-testkit pjacoco-testkit-junit5 pjacoco-testkit-junit4 pjacoco-testkit-restassured; do
+            cp "$M2/$a/${VERSION}/$a-${VERSION}.jar" "dist/$a-${VERSION}.jar"
+          done
+          # Maven plugin jar from the Maven build.
+          cp "maven-plugin/target/pjacoco-maven-plugin-${VERSION}.jar" "dist/pjacoco-maven-plugin-${VERSION}.jar"
+          # Checksums for every staged jar.
+          ( cd dist && for j in *.jar; do sha256sum "$j" > "$j.sha256"; done )
+          echo "Staged artifacts:"; ls -1 dist
+          count="$(ls dist/*.jar | wc -l | tr -d ' ')"
+          test "$count" -eq 6 || { echo "::error::expected 6 jars (agent + 4 testkit + maven-plugin), staged $count."; exit 1; }
 
       - name: Create GitHub Release
         env:
@@ -99,8 +117,7 @@ jobs:
           PRERELEASE_FLAG=""
           if [ "$PRERELEASE" = "true" ]; then PRERELEASE_FLAG="--prerelease"; fi
           gh release create "$TAG" \
-            "dist/jacocoagent-parallel-${VERSION}.jar" \
-            "dist/jacocoagent-parallel-${VERSION}.jar.sha256" \
+            dist/*.jar dist/*.jar.sha256 \
             --target "$TARGET_SHA" \
             --title "v${VERSION}" \
             --generate-notes \
@@ -118,7 +135,10 @@ jobs:
             if [ -n "$TAG" ]; then
               echo ""
               echo "- Tag: \`$TAG\`"
-              echo "- Asset: \`jacocoagent-parallel-${VERSION}.jar\` (+ \`.sha256\`)"
+              echo "- Assets (each + \`.sha256\`):"
+              echo "  - \`pjacoco-agent-${VERSION}.jar\`"
+              echo "  - \`pjacoco-testkit-${VERSION}.jar\`, \`pjacoco-testkit-junit5-${VERSION}.jar\`, \`pjacoco-testkit-junit4-${VERSION}.jar\`, \`pjacoco-testkit-restassured-${VERSION}.jar\`"
+              echo "  - \`pjacoco-maven-plugin-${VERSION}.jar\`"
               echo "- Release: $RELEASE_URL"
             else
               echo ""
