@@ -295,7 +295,7 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 | `traceReaperIntervalMillis` | idle reaper 실행 간격(ms). `traceKeyAutoCreate=true` 시 백그라운드 스레드가 이 주기로 idle store를 flush+evict한다. | `10000` |
 | `traceIdleFlushMillis` | traceId store를 idle로 판정하는 무업데이트 시간(ms). 이 시간 동안 업데이트가 없으면 reaper가 flush+evict한다. | `30000` |
 | `traceLateWriteGraceMillis` | flush 후 store를 유지하는 grace 기간(ms). flush 직후에도 이 시간 내 늦은 쓰기가 도착하면 재flush해 유실을 방지한다. | `10000` |
-| `inFlightGuardMillis` | eviction 시 최근 `inFlightGuardMillis` 이내에 업데이트된 store를 in-flight로 간주해 보호한다. 불가피한 in-flight eviction은 `evictedInFlightTraces` 카운터로 관측된다. | `0` |
+| `inFlightGuardMillis` | eviction 시 최근 `inFlightGuardMillis` 이내에 업데이트된 store를 in-flight로 간주해 보호한다. 불가피한 in-flight eviction은 `evictedInFlightTraces` 카운터로 관측된다. | `traceIdleFlushMillis` 값 (기본 30s) |
 | `commitSha` | manifest 헤더에 기록(또는 env `PJACOCO_COMMIT`) | — |
 
 ## 산출물
