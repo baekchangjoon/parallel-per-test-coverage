@@ -88,20 +88,47 @@ public final class ProbeInstrumentation {
 
     /** Instruments matching app classes with jacoco's Instrumenter. Never breaks class loading. */
     static final class JacocoTransformer implements ClassFileTransformer {
+        /** Java 9+ platform classloader (loads JDK runtime modules: jdk.httpserver, java.sql, ...);
+         *  null on Java 8 where those classes are bootstrap-loaded instead. Resolved reflectively so the
+         *  agent still compiles/runs on Java 8. */
+        private static final ClassLoader PLATFORM_LOADER = platformLoader();
+
         private final Instrumenter instrumenter;
         private final WildcardMatcher includes;
         private final WildcardMatcher excludes;   // null => exclude nothing
+        private final boolean inclBootstrap;      // false (default) => skip bootstrap/JDK classes
+
+        private static ClassLoader platformLoader() {
+            try {
+                return (ClassLoader) ClassLoader.class.getMethod("getPlatformClassLoader").invoke(null);
+            } catch (Throwable t) {
+                return null;   // Java 8: no platform classloader
+            }
+        }
 
         JacocoTransformer(Instrumenter instrumenter, AgentOptions options) {
             this.instrumenter = instrumenter;
             this.includes = new WildcardMatcher(options.includes());        // default "*"
             this.excludes = options.excludes().isEmpty() ? null : new WildcardMatcher(options.excludes());
+            this.inclBootstrap = options.inclBootstrapClasses();
         }
 
         @Override
         public byte[] transform(ClassLoader loader, String vmName, Class<?> beingRedefined,
                                 ProtectionDomain pd, byte[] buffer) {
             if (vmName == null || beingRedefined != null) return null;       // first load only
+            // Never instrument JDK runtime classes unless explicitly opted in. They are loaded by the
+            // bootstrap loader (loader == null: java.*, sun.*) or — on Java 9+ — the platform loader
+            // (jdk.*, com.sun.*, java.sql, ...). Under the default includes=* the wildcard matches them
+            // too, and instrumenting them during premain either trips the native JPLIS
+            // "*** java.lang.instrument ASSERTION FAILED ***" (bootstrap classes) or injects a $jacocoInit
+            // that crosses JPMS module read edges and throws IllegalAccessError (e.g. com.sun.net.httpserver
+            // .HttpServer, which the agent's own control endpoint uses) — both abort premain. App classes
+            // never use the bootstrap/platform loader, so this never skips application code (incl. javax.*).
+            // jacoco's CoverageTransformer skips bootstrap classes by default (inclbootstrapclasses=false).
+            if (!inclBootstrap && (loader == null || (PLATFORM_LOADER != null && loader == PLATFORM_LOADER))) {
+                return null;
+            }
             String dotted = vmName.replace('/', '.');
             if (dotted.startsWith("io.pjacoco.") || dotted.startsWith("org.jacoco.")
                     || dotted.startsWith("net.bytebuddy.") || dotted.startsWith("org.objectweb.asm.")) {
