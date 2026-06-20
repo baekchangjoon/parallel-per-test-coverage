@@ -49,6 +49,8 @@ public final class AgentOptions {
     public boolean junit4Auto() { return Boolean.parseBoolean(get("junit4Auto", "true")); }
     /** Auto-create a store for an unregistered coverage key in tracer mode. Default false (strict). */
     public boolean traceKeyAutoCreate() { return Boolean.parseBoolean(get("traceKeyAutoCreate", "false")); }
+    /** Bounded cap for the report-time traceId->testId map (REQ-011). Default 100000. */
+    public int maxTraceMappings() { return Integer.parseInt(get("maxTraceMappings", "100000")); }
 
     // passed through to jacoco-core instrumentation
     public String includes()    { return get("includes", "*"); }

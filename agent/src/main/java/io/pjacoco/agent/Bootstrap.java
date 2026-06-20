@@ -13,6 +13,7 @@ import io.pjacoco.agent.output.ExecWriter;
 import io.pjacoco.agent.output.Json;
 import io.pjacoco.agent.probe.CoverageBridge;
 import io.pjacoco.agent.probe.ProbeInstrumentation;
+import io.pjacoco.agent.mapping.TestIdMappingRegistry;
 import io.pjacoco.agent.store.TestStoreRegistry;
 import io.pjacoco.agent.trace.BraveTestIdSource;
 import io.pjacoco.agent.trace.CoverageKeyResolver;
@@ -44,6 +45,8 @@ public final class Bootstrap {
                     public long getAsLong() { return System.currentTimeMillis(); }
                 }, options.traceKeyAutoCreate());
 
+        final TestIdMappingRegistry mapping = new TestIdMappingRegistry(options.maxTraceMappings());
+
         // In-JVM activation API: the testkit reaches this reflectively; the JUnit 4 runLeaf advice calls it.
         CoverageControl.bindRegistry(registry);
 
@@ -69,7 +72,7 @@ public final class Bootstrap {
         // Best-effort control endpoint (the in-process path never calls it; a bind clash is harmless there).
         final ControlEndpoint[] endpointRef = new ControlEndpoint[1];
         try {
-            ControlEndpoint endpoint = new ControlEndpoint(registry, options.controlHost(), options.controlPort());
+            ControlEndpoint endpoint = new ControlEndpoint(registry, mapping, options.controlHost(), options.controlPort());
             int port = endpoint.start();
             endpointRef[0] = endpoint;
             log.info("control endpoint on " + options.controlHost() + ":" + port);
@@ -93,6 +96,7 @@ public final class Bootstrap {
                         l.warn("aggregate", "failed to write whole-run aggregate: " + e);
                     }
                 }
+                mapping.writeTo(outDir.resolve("trace-map.properties"));
                 if (endpointRef[0] != null) {
                     endpointRef[0].stop();
                 }

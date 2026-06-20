@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import io.pjacoco.agent.mapping.TestIdMappingRegistry;
 import io.pjacoco.agent.observability.AgentLog;
 import io.pjacoco.agent.observability.Metrics;
 import io.pjacoco.agent.output.ExecWriter;
@@ -30,7 +31,7 @@ class ControlEndpointTest {
                 false, 100, new java.util.function.LongSupplier() {
                     public long getAsLong() { return clock.get(); }
                 });
-        endpoint = new ControlEndpoint(registry, "127.0.0.1", 0);   // 0 = ephemeral
+        endpoint = new ControlEndpoint(registry, new TestIdMappingRegistry(1000), "127.0.0.1", 0);   // 0 = ephemeral
         port = endpoint.start();
     }
 
