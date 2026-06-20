@@ -65,6 +65,28 @@ Test harness                          Target app JVM  (-javaagent:jacocoagent-pa
 
 ## Quick start (recommended)
 
+> ⚠️ **Read this first — local install is required for now.** The artifacts are **not published to
+> Maven Central / the Gradle Plugin Portal yet** (public release is a planned follow-up). So the
+> `io.pjacoco:…` / `id("io.pjacoco.gradle")` coordinates below **will fail to resolve if you copy them
+> verbatim** — that is the un-published state, not a bug. For now, clone the source and install locally
+> (once):
+>
+> ```bash
+> # Libraries + agent (shaded) + testkit + Gradle plugin → your local Maven repo
+> ./gradlew :agent:publishToMavenLocal \
+>   :testkit-core:publishToMavenLocal :testkit-junit5:publishToMavenLocal \
+>   :testkit-junit4:publishToMavenLocal :testkit-restassured:publishToMavenLocal \
+>   :gradle-plugin:publishToMavenLocal
+> # Maven plugin (resolves the agent installed above)
+> mvn -f maven-plugin/pom.xml install
+> ```
+>
+> Gradle consumers pick up the plugin from mavenLocal via `pluginManagement { repositories {
+> mavenLocal() } }` (see [`samples/gradle-sample`](samples/gradle-sample)). Full procedure:
+> [`docs/PUBLISHING.md`](docs/PUBLISHING.md); public-release roadmap:
+> [distribution & onboarding requirements](docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md)
+> (REQ-D03 tracks public publishing). This notice is removed once public release lands.
+
 Add the build **plugin + testkit**. The plugin resolves the agent and connects it via `-javaagent`; the
 testkit owns the per-test boundary (start/stop) and `baggage: test.id=...` propagation. Copy-and-run
 examples: [`samples/gradle-sample`](samples/gradle-sample) · [`samples/maven-sample`](samples/maven-sample)
@@ -113,8 +135,8 @@ class OwnerBlackBoxIT {
 
 > Artifact names: agent `io.pjacoco:pjacoco-agent`, testkit `io.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
 > Gradle plugin id `io.pjacoco.gradle`, Maven plugin `io.pjacoco:pjacoco-maven-plugin`. Public release
-> (Maven Central / Gradle Plugin Portal) is pending; see [`docs/PUBLISHING.md`](docs/PUBLISHING.md) for
-> local validation today.
+> (Maven Central / Gradle Plugin Portal) is **not done yet** (planned follow-up, REQ-D03) — for now use
+> the local install above; procedure in [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 ## In-process per-test coverage (no servlet boundary)
 

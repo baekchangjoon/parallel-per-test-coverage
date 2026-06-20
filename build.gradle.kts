@@ -28,8 +28,11 @@ allprojects {
     }
 
     // Shared publication metadata + (credentials-gated) signing for every module that publishes.
-    // Maven Central requires the POM metadata below + signatures; the actual Central Portal upload is
-    // wired in the release workflow and only runs when the publishing secrets are present.
+    // Maven Central requires the POM metadata below + signatures. NOTE: the POM/signing here is
+    // wired, but the actual Central Portal upload step is NOT yet in release.yml — public publish is
+    // a deferred, credentials-gated follow-up (REQ-D03; see docs/PUBLISHING.md "Public release").
+    // Today release.yml publishes only the agent shaded jar to a GitHub Release; consume the other
+    // modules via publishToMavenLocal until then (README "빠른 시작").
     pluginManager.withPlugin("maven-publish") {
         apply(plugin = "signing")
         val repoUrl = "https://github.com/baekchangjoon/parallel-per-test-coverage"
