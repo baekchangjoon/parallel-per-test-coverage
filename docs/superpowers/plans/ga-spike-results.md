@@ -300,3 +300,20 @@ over the OTel agent jar is supplied so ByteBuddy can resolve the shaded type hie
    -Dotel.traces.exporter=none -Dotel.metrics.exporter=none -Dotel.logs.exporter=none -jar app.jar`;
   exercise `curl -H 'traceparent: 00-1111…1111-2222…2222-01' http://localhost:8080/spike/async`.
 - Full investigation: `sdd/task-1-report.md`.
+
+---
+
+## GA-2 (C3b 게이트): OTel javaagent의 Kafka 홉 trace 자동 전파 — PASS (C1 cross-JVM 실측 근거)
+
+**질문:** OTel javaagent가 Kafka producer→consumer 홉에서 trace context(traceId)를 자동 전파하는가(HTTP뿐 아니라 Kafka record header)?
+
+**판정: PASS** — 별도 spike 불요. C1 OTel weave Kafka-consumer 갭 작업(`docs/superpowers/decisions/2026-06-20-otel-weave-kafka-consumer-gap.md`, RESOLVED; PR #13)에서 **실측**:
+- tainted-spring(real OTel javaagent 2.11.0, Java 11)에서 diary 서비스가 Kafka로 발행한 이벤트를 **별도 JVM** mindgraph 서비스의 Kafka consumer(`DiaryCreatedConsumer`)가 처리.
+- pjacoco OTel scope weave 수정 후 mindgraph(consumer JVM)의 per-trace 커버리지 `classCount` **0→14**, `DiaryCreatedConsumer`가 **producer가 시작한 traceId에 귀속**됨.
+- consumer 스레드가 producer와 **동일 traceId를 관측**한다는 것은 OTel javaagent가 Kafka record header로 trace context를 자동 전파했음을 의미 = GA-2 PASS의 cross-JVM 실측 증거.
+
+**거짓이었다면:** Kafka 경계 명시 전파(Kafka 인터셉터/헤더, 또는 Brave의 `eventuate-tram-spring-cloud-sleuth-tram-starter` 류) 폴백. 증거상 불필요.
+
+**C3b 재확인:** T6 `TaintedSpringDistributedE2E`가 동일 BFF→Kafka→다운스트림 경로를 **testId 귀속(서비스별 리포트)까지** 확장해 GA-2를 재확인한다.
+
+**참고 반례(주의 유지):** Eventuate Tram(Brave)은 자동 전파가 안 돼 전용 starter가 필요했다(legacy-tram R1). "자동 전파"는 OTel/Kafka 조합에서 입증된 것이며, Brave/Tram 경로(T6 legacy-tram)는 별도 trace 생존이 R1에서 이미 입증됨.
