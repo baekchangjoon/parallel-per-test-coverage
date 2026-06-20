@@ -3,7 +3,10 @@ package io.pjacoco.gradle;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.file.FileCollection;
 import org.gradle.api.provider.Provider;
+import org.gradle.api.tasks.Classpath;
+import org.gradle.api.tasks.Input;
 import org.gradle.process.CommandLineArgumentProvider;
 import org.gradle.process.JavaForkOptions;
 
@@ -92,8 +95,20 @@ public class PjacocoPlugin implements Plugin<Project> {
             for (String taskName : ext.getAttachTo().getOrElse(java.util.Collections.emptyList())) {
                 p.getTasks().named(taskName).configure(task -> {
                     if (task instanceof JavaForkOptions) {
+                        // The agent args (incl. the resolved agent jar) become @Nested inputs of the task, so
+                        // a changed pjacoco option or agent version invalidates up-to-date. The coverage dir
+                        // is declared as a task output so deleting the .exec re-runs the task (P4-A) — mirrors
+                        // vanilla jacoco's JacocoTaskExtension binding the exec to the task's outputs.
                         ((JavaForkOptions) task).getJvmArgumentProviders().add(
-                                new AgentArgs(agentJvmArg, controlUrlArg, ext.getAutoDetectExtensions()));
+                                new AgentArgs(agentConf, agentJvmArg, controlUrlArg, ext.getAutoDetectExtensions()));
+                        // Register the coverage dir as a task output (so deleting the .exec re-runs the
+                        // task) via a plain provider — NOT the live `destfile` property itself. Wrapping in
+                        // project.provider() keeps it lazy (resolved at input/output snapshot time, so a
+                        // consumer-customized destfile is honored) while decoupling it from the property, so
+                        // reading destfile inside the @Input agent-arg does not trip Gradle's "querying an
+                        // unproduced output" guard.
+                        task.getOutputs().dir(p.provider(() -> ext.getDestfile().get().getAsFile()))
+                                .withPropertyName("pjacocoCoverageDir");
                     } else {
                         p.getLogger().warn("[pjacoco] attachTo task '{}' is not a JVM-forking task; skipped.", taskName);
                     }
@@ -102,18 +117,40 @@ public class PjacocoPlugin implements Plugin<Project> {
         });
     }
 
-    /** Lazily yields the agent + control-url (+ optional JUnit 5 autodetection) JVM args at execution time. */
+    /**
+     * Lazily yields the agent + control-url (+ optional JUnit 5 autodetection) JVM args at execution time.
+     * Added to a task's {@code jvmArgumentProviders}, so Gradle treats it as a {@code @Nested} input and
+     * folds its annotated getters into the task's up-to-date fingerprint (P4-A): the agent jar content
+     * ({@code @Classpath}) and the resolved option strings ({@code @Input}) — so a changed agent version
+     * or pjacoco option correctly invalidates the cache.
+     */
     static final class AgentArgs implements CommandLineArgumentProvider {
+        private final FileCollection agentClasspath;
         private final Provider<String> agentJvmArg;
         private final Provider<String> controlUrlArg;
         private final Provider<Boolean> autoDetectExtensions;
 
-        AgentArgs(Provider<String> agentJvmArg, Provider<String> controlUrlArg,
+        AgentArgs(FileCollection agentClasspath, Provider<String> agentJvmArg, Provider<String> controlUrlArg,
                   Provider<Boolean> autoDetectExtensions) {
+            this.agentClasspath = agentClasspath;
             this.agentJvmArg = agentJvmArg;
             this.controlUrlArg = controlUrlArg;
             this.autoDetectExtensions = autoDetectExtensions;
         }
+
+        /** The resolved agent jar — content-tracked so a new agent version re-runs the task. */
+        @Classpath
+        public FileCollection getAgentClasspath() { return agentClasspath; }
+
+        /** The resolved {@code -javaagent} string (bakes in includes/excludes/port/aggregate/etc.). */
+        @Input
+        public String getAgentJvmArg() { return agentJvmArg.get(); }
+
+        @Input
+        public String getControlUrlArg() { return controlUrlArg.get(); }
+
+        @Input
+        public boolean isAutoDetectExtensions() { return autoDetectExtensions.getOrElse(true); }
 
         @Override
         public Iterable<String> asArguments() {
