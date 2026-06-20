@@ -18,6 +18,13 @@ public final class Metrics {
     public final AtomicLong unmappedTraceIds = new AtomicLong();
     /** Incremented when the store cap forces eviction of a still-active (in-flight) trace store. */
     public final AtomicLong evictedInFlightTraces = new AtomicLong();
+    /** Incremented when an inbound HTTP request reaches the instrumented server with no resolvable
+     *  test.id (no tracer scope, no baggage) and no active CoverageContext, during a collection window. */
+    public final AtomicLong missingTestIdInbound = new AtomicLong();
+    /** Incremented every time a probe fires on a thread with no active CoverageContext (coverage dropped). */
+    public final AtomicLong droppedNoContext = new AtomicLong();
+    /** Subset of droppedNoContext where no in-process test store was active → not attributable to any test. */
+    public final AtomicLong unattributedDrops = new AtomicLong();
 
     public String summary() {
         return "[pjacoco] summary: completed=" + testsCompleted.get()
@@ -28,6 +35,9 @@ public final class Metrics {
                 + " scopeHookInjectFail=" + scopeHookInjectionFailures.get()
                 + " fallbackActivations=" + fallbackActivations.get()
                 + " unmapped=" + unmappedTraceIds.get()
-                + " evictedInFlight=" + evictedInFlightTraces.get();
+                + " evictedInFlight=" + evictedInFlightTraces.get()
+                + " missingTestIdInbound=" + missingTestIdInbound.get()
+                + " droppedNoContext=" + droppedNoContext.get()
+                + " unattributedDrops=" + unattributedDrops.get();
     }
 }

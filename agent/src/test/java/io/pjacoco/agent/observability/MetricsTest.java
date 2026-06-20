@@ -97,4 +97,19 @@ class MetricsTest {
         m.evictedInFlightTraces.incrementAndGet();
         assertTrue(m.summary().contains("evictedInFlight=1"));
     }
+
+    // CLS-REQ-007: summary exposes the three loss counters with their values
+    @Test
+    @org.junit.jupiter.api.DisplayName("CLS-REQ-007: summary includes loss counters with values")
+    void summary_includesLossCounters() {
+        Metrics m = new Metrics();
+        m.missingTestIdInbound.incrementAndGet();
+        m.droppedNoContext.incrementAndGet();
+        m.droppedNoContext.incrementAndGet();
+        m.unattributedDrops.incrementAndGet();
+        String s = m.summary();
+        assertTrue(s.contains("missingTestIdInbound=1"), s);
+        assertTrue(s.contains("droppedNoContext=2"), s);
+        assertTrue(s.contains("unattributedDrops=1"), s);
+    }
 }
