@@ -239,10 +239,10 @@
 | REQ-013 | N:1 병합 | `TraceCoverageMergerTest#multipleTraceIdsOneTestId` (+ `aggregateExecAndDirsAreExcluded` 부가 증거) | integration | 🟢 green |
 | REQ-014 | testId 정규화 | `TestIdNormalizationTest#toFqcnHashMethod` (unit) + `PjacocoExtensionTest`/`PjacocoRuleTest` (어댑터 FQCN 정렬 확인) | unit + integration | 🟢 green |
 | REQ-015 | 서비스 간 병합 리포트 | `LegacyTramDistributedE2E` + `TaintedSpringDistributedE2E` | E2E | 🔴 planned |
-| REQ-016 | flush 생명주기(idle reaper) | `TraceStoreLifecycleIT#idleReaperFlushWithoutJvmExit` | integration/E2E | 🔴 planned |
-| REQ-017 | late-write grace | `LateWriteGraceIT#lateWriteNotLost` | integration | 🔴 planned |
-| REQ-018 | in-flight eviction 방지 | `TraceEvictionIT#idleEvictedBeforeInFlight` | integration | 🔴 planned |
-| REQ-019 | 관측성 카운터 | `MetricsTest#{scopeHookInjectionFailuresStartsAtZero, fallbackActivationsStartsAtZero, summaryIncludesNewCounters, installFailureIncrementsCounterAndDoesNotPropagate, unmappedTraceIdsStartsAtZeroAndCounts}`. C1: scopeHookInjectionFailures+fallbackActivations 완료; C2: unmappedTraceIds 완료; C3: evictedInFlightTraces | unit/integration | 🟡 partial |
+| REQ-016 | flush 생명주기(idle reaper) | `TraceStoreLifecycleIT#idleReaperFlushWithoutJvmExit` + `TraceStoreReaperTest#{idleStoreFlushedWithoutJvmExit, idleStoreEvictedAfterGrace}` — 주입 clock으로 결정론, Docker 다중서비스는 C3b. 비고: 기존 control stop(`/test/stop`)은 즉시 flush 수단으로 유지; design §6.4 (b) scope-close flush는 C3a 범위 외 | integration | 🟢 green |
+| REQ-017 | late-write grace | `TraceStoreReaperTest#lateWriteWithinGraceIsReflushedNotLost` | integration | 🟢 green |
+| REQ-018 | in-flight eviction 방지 | `TestStoreRegistryEvictionTest#{idleEvictedBeforeInFlight, unavoidableInFlightEvictionIsCounted}` — 비고: 비-트레이서 모드에서 lastActivityMillis = startedAtMillis → idle-first == oldest-start, 무회귀 | integration | 🟢 green |
+| REQ-019 | 관측성 카운터 | `MetricsTest#{scopeHookInjectionFailuresStartsAtZero, fallbackActivationsStartsAtZero, summaryIncludesNewCounters, installFailureIncrementsCounterAndDoesNotPropagate, unmappedTraceIdsStartsAtZeroAndCounts, evictedInFlightTracesStartsAtZeroAndCounts}`. C1+C2+C3a 전 카운터 완료 | unit/integration | 🟢 green |
 | REQ-022 | 트레이서 모드 store 자동생성 | `TestStoreRegistryTest#{forCoverageKeyAutoCreatesWhenEnabled, forCoverageKeyStrictReturnsNullWhenDisabled}` | unit | 🟢 green |
 | REQ-023 | C3 수집 + drain 대기 | `DistributedCollectIT#downstreamCollectedAfterDrain` | E2E | 🔴 planned |
 | REQ-024 | scope-fail 동기 폴백 | GA-1 PASS → scope weave가 주 경로; choke-point 폴백 미발동, C3에서 분산 안전망으로 재평가. | integration | 🔵 deferred |
@@ -251,15 +251,22 @@
 
 **C1 완료 상태 (DoD):**
 - C1 Must REQ-001~010, REQ-022: **12/12 🟢** (분모 12, 분자 12)
-- REQ-019 (미연기 Should): **🟡 partial** — C1(scopeHookInjectionFailures + fallbackActivations) 완료; C2(unmappedTraceIds) 완료; evictedInFlightTraces는 C3
+- REQ-019 (미연기 Should): **🟡 partial** — C1(scopeHookInjectionFailures + fallbackActivations) 완료; C2(unmappedTraceIds) 완료; evictedInFlightTraces는 C3 → **C3a 완료로 🟢 (아래 참조)**
 - REQ-024 (Should): **🔵 deferred** — GA-1 PASS로 choke-point 폴백 경로 불필요, C3 재평가 → 분모 제외
 - **C1 Must 커버리지: 12/12 (100%)**
 
 **C2 완료 상태 (DoD):**
 - C2 Must REQ-011, REQ-012: **2/2 🟢**
 - C2 Should REQ-013, REQ-014: **2/2 🟢**
-- **C2 Must+Should 커버리지: 4/4 (100%)** — REQ-019 추가 전진(unmappedTraceIds C2 완료, 여전히 🟡 partial)
+- **C2 Must+Should 커버리지: 4/4 (100%)** — REQ-019 추가 전진(unmappedTraceIds C2 완료)
 
-Coverage(전체): C1 Must 12/12 🟢; C2 Must+Should 4/4 🟢; REQ-019 🟡 partial; C3 REQ 🔴 planned. 제외: Won't 2 (🔵 REQ-020, REQ-021), deferred 1 (🔵 REQ-024).
+**C3a 완료 상태 (DoD):**
+- REQ-016 (Must) 🟢: idle reaper flush (JVM 종료 불필요)
+- REQ-017 (Should) 🟢: late-write grace period (flush 후 늦은 쓰기 비유실)
+- REQ-018 (Should) 🟢: idle-우선 eviction + evictedInFlightTraces 카운터
+- REQ-019 (Should) 🟢: C1+C2+C3a 전 카운터 완료 (evictedInFlightTraces C3a에서 추가)
+- **C3a Must+Should(대상) 커버리지: 4/4 (100%)**
+
+Coverage(전체): C1 Must 12/12 🟢; C2 Must+Should 4/4 🟢; C3a REQ-016/017/018/019 4/4 🟢; C3 장기(REQ-015/023) 🔴 planned. 제외: Won't 2 (🔵 REQ-020, REQ-021), deferred 1 (🔵 REQ-024).
 
 (Must: 001,002,003,004,005,006,007,008,009,010,011,012,015,016,022,023 = 16. Should: 013,014,017,018,019,024 = 6. C1 Must 대상: 001,002,003,004,005,006,007,008,009,010,022 = 11 + REQ-022 = 12.)
