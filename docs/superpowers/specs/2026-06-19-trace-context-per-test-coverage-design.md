@@ -98,7 +98,7 @@ pjacoco는 SUT에 붙은 JaCoCo probe 버퍼를 **testId별로 분할**해 per-t
    - **testId 형식 정규화:** 현 코드가 불일치한다 — `RunLeafAdvice`는 `Description.getClassName()`(FQCN), `PjacocoExtension`/`PjacocoInProcessRule`은 `getSimpleName()`/혼재. 매핑 등록 시 **FQCN#method로 정규화**를 강제한다.
    - in-process(트레이서 부재) 경로에서는 testId가 직접 들어오므로 매핑이 항등.
 
-4. **`TraceCoverageMerger` (신규, C3)** — ⚠️ 기존 `AggregateWriter`를 확장하지 **않는다**: `AggregateWriter`는 JVM 종료 시 JaCoCo whole-run `RuntimeData`를 단일 `.exec`로 덤프할 뿐 per-TestStore/cross-service 병합 개념이 없다. 신규 merger는 `ExecWriter`가 쓰는 per-store 스냅샷(`<key>.exec`/`.json`) 위에 선다. 입력: 각 서비스의 per-traceId `.exec` + 러너의 `traceId→testId` 맵. 출력: testId별·서비스별 병합 리포트. classId 충돌: JaCoCo classId는 클래스 바이트코드에 결정적이라 서로 다른 서비스가 같은 코드를 공유하지 않는 한 충돌하지 않음(공유 시 서비스 차원으로 분리). 병합은 JaCoCo `ExecutionDataStore.merge()` 적용 가능성 검토.
+4. **`TraceCoverageMerger` (신규)** — ⚠️ 기존 `AggregateWriter`를 확장하지 **않는다**: `AggregateWriter`는 JVM 종료 시 JaCoCo whole-run `RuntimeData`를 단일 `.exec`로 덤프할 뿐 per-TestStore/cross-service 병합 개념이 없다. 신규 merger는 `ExecWriter`가 쓰는 per-store 스냅샷(`<key>.exec`/`.json`) 위에 선다. 입력: 각 서비스의 per-traceId `.exec` + 러너의 `traceId→testId` 맵. 출력: testId별·서비스별 병합 리포트. classId 충돌: JaCoCo classId는 클래스 바이트코드에 결정적이라 서로 다른 서비스가 같은 코드를 공유하지 않는 한 충돌하지 않음(공유 시 서비스 차원으로 분리). **C2에서 단일-서비스 형태(`io.pjacoco.agent.output.TraceCoverageMerger`)를 도입했으며, 서비스 축·drain-wait·중앙 수집 토폴로지는 C3에서 확장한다.** 병합은 `ExecFileLoader` + `ExecutionDataStore.put()` → `ExecutionData.merge()`(OR-merge; public `merge()` 없음 — `put()`이 동일 classId 시 내부적으로 `ExecutionData.merge()` 호출)로 구현. JSON sidecar 병합은 C2 명시적 non-goal. 러너/CI가 오프라인으로 호출하며, Bootstrap은 merge를 배선하지 않고 in-place merge는 금지. **⚠️ non-goal (C2): JSON sidecar 병합.**
 
 ### 5.3 "coverage key" 일반화 — 표현 명시
 
@@ -236,7 +236,7 @@ pjacoco는 SUT에 붙은 JaCoCo probe 버퍼를 **testId별로 분할**해 per-t
 ## 10. 미해결 질문 (구현 중 확정)
 
 - `TestIdMappingRegistry` 등록을 어느 testkit 어댑터(JUnit5/4/RestAssured)에서, 어떤 메서드 형태로 주입할지(엔드포인트 계약은 §5.2-3에 명시; 어댑터 측 API만 미정).
-- `TraceCoverageMerger` 출력 포맷의 서비스 차원 표현(기존 `.exec`/`.json` 스키마에 service 축을 어떻게 더할지)과 `ExecutionDataStore.merge()` 적용 가부.
+- ~~`TraceCoverageMerger` 출력 포맷의 서비스 차원 표현(기존 `.exec`/`.json` 스키마에 service 축을 어떻게 더할지)과 `ExecutionDataStore.merge()` 적용 가부.~~ → **해소 (C2):** `ExecFileLoader` OR-merge(`ExecutionDataStore.put()` → `ExecutionData.merge()`)로 구현 완료; 서비스 차원 표현은 C3 과제.
 - §6.5 수집 토폴로지 택1 확정과 CDC 드레인 타임아웃·idle-reaper·grace period 기본값.
 - registry 키 일반화 형태(기존 `active/peek` 일반화 vs `forCoverageKey` 신설) 및 트레이서 모드 auto-create 플래그명.
 
