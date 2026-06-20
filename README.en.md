@@ -36,7 +36,7 @@ arrives on each inbound request as an **OpenTelemetry Baggage** header (`baggage
 explicit **control endpoint** defines the flush boundary.
 
 ```
-Test harness                          Target app JVM  (-javaagent:jacocoagent-parallel.jar)
+Test harness                          Target app JVM  (-javaagent:pjacoco-agent.jar)
    │                                   ┌──────────────────────────────────────────────┐
    │ setup:                            │ premain: embed jacoco-core + ByteBuddy advice  │
    │   POST /__coverage__/test/start ──┼─► TestStoreRegistry: create the T1 store        │
@@ -82,8 +82,12 @@ Test harness                          Target app JVM  (-javaagent:jacocoagent-pa
 > ```
 >
 > Gradle consumers pick up the plugin from mavenLocal via `pluginManagement { repositories {
-> mavenLocal() } }` (see [`samples/gradle-sample`](samples/gradle-sample)). Full procedure:
-> [`docs/PUBLISHING.md`](docs/PUBLISHING.md); public-release roadmap:
+> mavenLocal() } }` (see [`samples/gradle-sample`](samples/gradle-sample)).
+>
+> **If building from source is inconvenient**, v1.3.0+ [GitHub Releases](../../releases/latest) attach the
+> **agent, the four testkit jars, and the maven-plugin jar** as assets — download them and `mvn
+> install:install-file` (or use a Gradle `flatDir`); the Gradle plugin id still resolves via the Plugin
+> Portal / mavenLocal. Full procedure: [`docs/PUBLISHING.md`](docs/PUBLISHING.md); public-release roadmap:
 > [distribution & onboarding requirements](docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md)
 > (REQ-D03 tracks public publishing). This notice is removed once public release lands.
 
@@ -233,18 +237,18 @@ First get the jar — from [Releases](../../releases/latest), or build it:
 
 ```bash
 # Download a specific version (find the version on the Releases page)
-wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.3.0/jacocoagent-parallel-1.3.0.jar
+wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.3.0/pjacoco-agent-1.3.0.jar
 # Or grab the latest release with the gh CLI
-gh release download --repo baekchangjoon/parallel-per-test-coverage --pattern 'jacocoagent-parallel-*.jar'
+gh release download --repo baekchangjoon/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
 # Or build it (JDK 17+ to run Gradle; the artifact targets Java 8)
-JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar    # → agent/build/libs/jacocoagent-parallel.jar
+JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar    # → agent/build/libs/pjacoco-agent.jar
 ```
 
 Attach it to the target app, then drive the control endpoint from the test harness:
 
 ```bash
 # 1) Attach to the target app
-java -javaagent:jacocoagent-parallel.jar=destfile=coverage,port=6310,includes=com.example.* \
+java -javaagent:pjacoco-agent.jar=destfile=coverage,port=6310,includes=com.example.* \
      -jar your-app.jar
 
 # 2) Open / propagate / close the boundary
@@ -292,12 +296,12 @@ as siblings under one parent directory.
 
 # 1) Build the coverage agent (JDK 17+ to run Gradle; the jar itself targets Java 8).
 ( cd parallel-per-test-coverage && JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar )
-#   → parallel-per-test-coverage/agent/build/libs/jacocoagent-parallel.jar
+#   → parallel-per-test-coverage/agent/build/libs/pjacoco-agent.jar
 
 # 2) Build spring-petclinic from source, then start it with the agent attached.
 #    includes = the app's packages; the Spring Boot 4 jakarta.servlet / Tomcat 11 stack is supported.
 ( cd spring-petclinic && ./gradlew bootJar )
-java -javaagent:"$PWD/parallel-per-test-coverage/agent/build/libs/jacocoagent-parallel.jar=destfile=/tmp/petclinic-coverage,port=6310,includes=org.springframework.samples.petclinic.*" \
+java -javaagent:"$PWD/parallel-per-test-coverage/agent/build/libs/pjacoco-agent.jar=destfile=/tmp/petclinic-coverage,port=6310,includes=org.springframework.samples.petclinic.*" \
      -jar "$PWD/spring-petclinic/build/libs/spring-petclinic-4.0.0-SNAPSHOT.jar"
 
 # 3) In another shell, run the parallel black-box suite with per-test coverage routing on.

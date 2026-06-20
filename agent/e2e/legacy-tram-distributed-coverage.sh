@@ -23,7 +23,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 LEGACY_TRAM_ROOT="${LEGACY_TRAM_ROOT:-${HOME}/github_graph-rag-test-generator/graph-rag/samples/legacy-tram}"
-AGENT_JAR="${REPO_ROOT}/agent/build/libs/jacocoagent-parallel.jar"
+AGENT_JAR="${REPO_ROOT}/agent/build/libs/pjacoco-agent.jar"
 
 FIXED_TRACE_ID="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 FIXED_SPAN_ID="bbbbbbbbbbbbbbbb"

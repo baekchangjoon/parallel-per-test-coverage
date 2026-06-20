@@ -38,7 +38,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end acceptance: drives the app through the REAL {@code -javaagent:jacocoagent-parallel.jar}
+ * End-to-end acceptance: drives the app through the REAL {@code -javaagent:pjacoco-agent.jar}
  * and asserts the design spec's observable guarantees via the {@code .exec}/{@code .json} files on
  * disk. Runs only in the {@code e2eTest} Gradle task (real agent attached). The keystone
  * vanilla byte-equivalence is proven in-process by GoldenEquivalenceIT; here we verify the

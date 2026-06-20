@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * <ul>
  *   <li>{@code -javaagent:opentelemetry-javaagent.jar ...} — provides OTel tracing; the javaagent
  *       registers a GlobalOpenTelemetry so {@link GlobalOpenTelemetry#getTracer} works.</li>
- *   <li>{@code -javaagent:jacocoagent-parallel.jar=traceKeyAutoCreate=true,...} — instruments
+ *   <li>{@code -javaagent:pjacoco-agent.jar=traceKeyAutoCreate=true,...} — instruments
  *       {@link RequestHandler} and {@link AsyncWorker}, and hooks the OTel scope lifecycle via the
  *       {@code OtelScopeInboundActivator} weave.</li>
  * </ul>

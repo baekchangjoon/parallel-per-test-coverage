@@ -39,7 +39,7 @@ tasks.test {
 }
 
 tasks.shadowJar {
-    archiveFileName.set("jacocoagent-parallel.jar")
+    archiveFileName.set("pjacoco-agent.jar")
     archiveClassifier.set("")   // publish as the primary io.pjacoco:pjacoco-agent jar (no "all" classifier)
     // Self-contained agent (spec §3): relocate the embedded jacoco-core + byte-buddy so the agent
     // cannot clash with the same libraries on the target app's classpath. The jacoco-internal hook
@@ -127,7 +127,7 @@ val e2eCondyTest = tasks.register<Test>("e2eCondyTest") {
     useJUnitPlatform { includeTags("e2econdy") }
     outputs.upToDateWhen { false }
     dependsOn(tasks.shadowJar)
-    val agentJar = layout.buildDirectory.file("libs/jacocoagent-parallel.jar")
+    val agentJar = layout.buildDirectory.file("libs/pjacoco-agent.jar")
     doFirst {
         jvmArgs(
             "-javaagent:${agentJar.get().asFile.absolutePath}=destfile=build/coverage-condy,port=6312,includes=com.example.app.CondyTarget",
@@ -148,7 +148,7 @@ val e2eTest = tasks.register<Test>("e2eTest") {
     useJUnitPlatform { includeTags("e2e") }
     outputs.upToDateWhen { false }      // always re-run: exercises the freshly built agent jar (side-effecting)
     dependsOn(tasks.shadowJar)
-    val agentJar = layout.buildDirectory.file("libs/jacocoagent-parallel.jar")
+    val agentJar = layout.buildDirectory.file("libs/pjacoco-agent.jar")
     doFirst {
         jvmArgs(
             "-javaagent:${agentJar.get().asFile.absolutePath}=destfile=build/coverage,port=6310,includes=com.example.app.TargetService",
@@ -193,7 +193,7 @@ val e2eJakartaTest = tasks.register<Test>("e2eJakartaTest") {
     useJUnitPlatform()
     outputs.upToDateWhen { false }
     dependsOn(tasks.shadowJar)
-    val agentJar = layout.buildDirectory.file("libs/jacocoagent-parallel.jar")
+    val agentJar = layout.buildDirectory.file("libs/pjacoco-agent.jar")
     doFirst {
         jvmArgs(
             "-javaagent:${agentJar.get().asFile.absolutePath}=destfile=build/coverage-jakarta,port=6311,includes=com.example.app.TargetService",
@@ -240,7 +240,7 @@ val otelWeaveE2e = tasks.register<Test>("otelWeaveE2e") {
     useJUnitPlatform { includeTags("otelE2e") }
     outputs.upToDateWhen { false }
     dependsOn(tasks.shadowJar)
-    val agentJar = layout.buildDirectory.file("libs/jacocoagent-parallel.jar")
+    val agentJar = layout.buildDirectory.file("libs/pjacoco-agent.jar")
     val otelAgentJar = layout.buildDirectory.file("otel-agent/opentelemetry-javaagent.jar")
     doFirst {
         systemProperty("pjacoco.shadedJar", agentJar.get().asFile.absolutePath)

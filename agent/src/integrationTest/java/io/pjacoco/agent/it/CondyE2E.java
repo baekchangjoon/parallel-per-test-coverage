@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 /**
  * End-to-end proof on <strong>modern (Java 11+) bytecode</strong>: drives {@link CondyServlet}
  * (which calls {@code CondyTarget}, class-file major 55) through the REAL
- * {@code -javaagent:jacocoagent-parallel.jar} and asserts per-test {@code .exec} files carry real,
+ * {@code -javaagent:pjacoco-agent.jar} and asserts per-test {@code .exec} files carry real,
  * branch-exclusive coverage. Because {@code CondyTarget} is major 55, jacoco instruments it with
  * {@code CondyProbeArrayStrategy}; a green run here is the out-of-process confirmation that the
  * routing hook is not limited to Java 8 bytecode. Runs only in the {@code e2eCondyTest} Gradle task.
