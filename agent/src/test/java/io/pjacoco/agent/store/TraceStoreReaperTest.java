@@ -46,4 +46,24 @@ class TraceStoreReaperTest {
         assertNull(reg.peek("T"), "evicted after grace");
         assertTrue(Files.exists(dir.resolve("T.exec")), "flushed artifact remains on disk");
     }
+
+    @Test
+    void lateWriteWithinGraceIsReflushedNotLost(@TempDir Path dir) throws Exception {  // REQ-017
+        AtomicLong clock = new AtomicLong(0);
+        TestStoreRegistry reg = reg(dir, clock);
+        TestStore s = reg.forCoverageKey("T");
+        s.record(7L, "com/x/A", 0, 2);                   // probe 0
+        TraceStoreReaper reaper = new TraceStoreReaper(reg, clock::get, 30000, 10000);
+        clock.set(0);     reaper.tick();                 // first observation -> active
+        clock.set(30000); reaper.tick();                 // flush #1 (probe 0 only), grace begins
+
+        s.record(7L, "com/x/A", 1, 2);                   // LATE write: probe 1, after flush, within grace
+        clock.set(35000); reaper.tick();                 // sees writes changed -> reflush (probe 0+1), reset grace
+
+        // the on-disk .exec must contain the late probe (reflushed), not just probe 0
+        org.jacoco.core.tools.ExecFileLoader l = new org.jacoco.core.tools.ExecFileLoader();
+        l.load(dir.resolve("T.exec").toFile());
+        boolean[] probes = l.getExecutionDataStore().get(7L).getProbes();
+        assertTrue(probes[0] && probes[1], "late write must be reflushed, not lost");
+    }
 }
