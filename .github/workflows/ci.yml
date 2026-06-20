@@ -96,7 +96,8 @@ jobs:
           # The two parallel REST Assured tests hit DIFFERENT SUT classes (Alpha vs Beta), so
           # classCount=1 each proves no cross-contamination: a leak would make the absorbing test's
           # .exec record both classes (classCount=2).
-          for t in "OwnerRestAssuredIT#alphaOnly" "OwnerRestAssuredIT#betaOnly" "AlphaJUnit4Test#hitsAlpha"; do
+          # testIds are FQCN#method (black-box adapters emit the fully-qualified class name, REQ-014).
+          for t in "com.sample.OwnerRestAssuredIT#alphaOnly" "com.sample.OwnerRestAssuredIT#betaOnly" "com.sample.AlphaJUnit4Test#hitsAlpha"; do
             test -s "samples/gradle-sample/build/pjacoco/$t.exec" \
               || { echo "::error::missing $t.exec"; exit 1; }
             grep -q '"classCount":1' "samples/gradle-sample/build/pjacoco/$t.json" \
