@@ -172,7 +172,7 @@ echo "[e2e] Wait complete."
 # ---------------------------------------------------------------------------
 # Step 7 — Write central trace-map
 # ---------------------------------------------------------------------------
-MAP_FILE="$(mktemp --suffix=.properties)"
+MAP_FILE="$(mktemp -d)/trace-map.properties"   # portable (BSD/GNU mktemp; no --suffix)
 echo "${FIXED_TRACE_ID}=sample.OrderFlowE2E#placesOrderAcrossServices" > "${MAP_FILE}"
 echo "[e2e] Trace map: ${MAP_FILE}"
 
