@@ -28,8 +28,16 @@ public final class AgentOptions {
         return v != null ? v : def;
     }
 
-    // our model (destfile reinterpreted as a directory)
-    public String outputDir()   { return get("destfile", "coverage"); }
+    // our model (destfile reinterpreted as a directory). `destdir` is the clearer alias (the value is a
+    // directory, not a single file as in vanilla jacoco); precedence: non-empty destdir > non-empty
+    // destfile > default. An empty alias value (e.g. `destdir=`) is treated as absent. (REQ-U04)
+    public String outputDir() {
+        String dir = raw.get("destdir");
+        if (dir != null && !dir.isEmpty()) return dir;
+        String file = raw.get("destfile");
+        if (file != null && !file.isEmpty()) return file;
+        return "coverage";
+    }
     /** Record coverage for a testId that arrives without a prior control-plane start (auto-create its
      *  store). Default false (strict: such requests are ignored). Reads {@code autoRegister};
      *  {@code lenient} is accepted as a legacy alias. */
@@ -72,4 +80,9 @@ public final class AgentOptions {
      *  which the agent's own control endpoint uses). Leave false unless you specifically need JDK-class
      *  coverage and accept the risk. */
     public boolean inclBootstrapClasses() { return Boolean.parseBoolean(get("inclbootstrapclasses", "false")); }
+
+    /** Whether to start the loopback control endpoint. Default true (per-test/control-plane consumers).
+     *  Set {@code control=false} for pure aggregate/in-process use to avoid the port bind cost and
+     *  conflicts entirely. (REQ-U01) */
+    public boolean control() { return Boolean.parseBoolean(get("control", "true")); }
 }

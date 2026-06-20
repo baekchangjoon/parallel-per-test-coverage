@@ -30,6 +30,15 @@ public final class TraceCoverageMerger {
     /** Whole-run aggregate dump (AgentOptions.aggregateFile() default) — not a per-key snapshot, excluded. */
     static final String AGGREGATE_EXEC = "aggregate.exec";
 
+    /** Whether a {@code *.exec} file is a whole-run aggregate dump (to skip when merging per-test
+     *  snapshots). Matches the default name and the {@code %p}-namespaced convention
+     *  {@code aggregate-<token>.exec} (REQ-U02), so a multi-module reactor's per-JVM dumps are not
+     *  mis-merged as per-test snapshots. Note: a fully custom {@code aggregateFile} name is still not
+     *  recognized here (pre-existing limitation — scope your aggregate name to the convention). */
+    static boolean isAggregateDump(String fileName) {
+        return AGGREGATE_EXEC.equals(fileName) || fileName.matches("aggregate-.+\\.exec");
+    }
+
     /** @param mapping nullable; null behaves as an always-unmapped mapping (everything keyed by raw key). */
     public void merge(Path inputDir, TraceMapping mapping, Path outputDir, Metrics metrics) throws Exception {
         if (!Files.isDirectory(inputDir)) return;
@@ -37,7 +46,7 @@ public final class TraceCoverageMerger {
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(inputDir, "*.exec")) {
             for (Path f : ds) {
                 if (!Files.isRegularFile(f)) continue;                       // skip dirs named *.exec
-                if (AGGREGATE_EXEC.equals(f.getFileName().toString())) continue;  // skip whole-run dump
+                if (isAggregateDump(f.getFileName().toString())) continue;  // skip whole-run dump(s)
                 String key = stem(f);
                 String testId = (mapping == null) ? null : mapping.testIdFor(key);
                 if (testId == null) {

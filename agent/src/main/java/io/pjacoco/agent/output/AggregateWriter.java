@@ -40,9 +40,29 @@ public final class AggregateWriter {
         }
     }
 
-    /** Absolute path → used as-is; otherwise resolved under the output directory. */
+    /** Per-JVM token substituted for {@code %p} in aggregateFile so multi-module reactors that share a
+     *  destfile dir don't overwrite each other's whole-run dump (REQ-U02). PID via RuntimeMXBean
+     *  ("pid@host", HotSpot convention) with a nanoTime-hex fallback for JVMs whose format differs.
+     *  Resolved once per JVM so the name is stable across calls. */
+    static final String PID_TOKEN = computePidToken();
+
+    private static String computePidToken() {
+        try {
+            String vmName = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
+            int at = vmName.indexOf('@');
+            if (at > 0) {
+                String pid = vmName.substring(0, at);
+                if (pid.matches("\\d+")) return pid;
+            }
+        } catch (Throwable ignored) { /* fall through to unique fallback */ }
+        return Long.toHexString(System.nanoTime());
+    }
+
+    /** Absolute path → used as-is; otherwise resolved under the output directory. {@code %p} in the
+     *  file name is substituted with the per-JVM {@link #PID_TOKEN} (REQ-U02). */
     static Path resolve(Path outDir, String aggregateFile) {
-        Path p = Paths.get(aggregateFile);
-        return p.isAbsolute() ? p : outDir.resolve(aggregateFile);
+        String name = aggregateFile.contains("%p") ? aggregateFile.replace("%p", PID_TOKEN) : aggregateFile;
+        Path p = Paths.get(name);
+        return p.isAbsolute() ? p : outDir.resolve(name);
     }
 }
