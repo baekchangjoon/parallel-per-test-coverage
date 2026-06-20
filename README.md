@@ -320,7 +320,7 @@ java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html 
 ```
 coverage/
   T1.exec        # 바닐라 JaCoCo 동일 포맷 (jacococli/Sonar/TIA 그대로 사용)
-  T1.json        # 사이드카: testId·result·classCount·retryCount·shardId·status·durationMs …
+  T1.json        # 사이드카: testId·result·classCount·retryCount·shardId·status·durationMs · incompleteAttribution/droppedProbes/attribution(손실 시) …
   manifest.json  # 전역 헤더: schemaVersion·jacocoVersion·commitSha·precision (premain 1회)
 ```
 
