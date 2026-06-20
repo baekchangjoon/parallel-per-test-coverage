@@ -34,7 +34,7 @@ public final class ExecWriter {
             os.close();
         }
 
-        String json = new Json()
+        Json j = new Json()
                 .put("testId", store.testId())
                 .put("exec", store.testId() + ".exec")
                 .put("precision", "line")
@@ -45,8 +45,13 @@ public final class ExecWriter {
                 .put("classCount", store.classCount())
                 .put("retryCount", store.retryCount())
                 .put("shardId", store.shardId())        // null -> omitted
-                .put("status", status)
-                .toString();
+                .put("status", status);
+        if (store.droppedProbes() > 0) {                // CLS-REQ-008: additive, only when loss attributed
+            j.put("incompleteAttribution", true)
+             .put("droppedProbes", store.droppedProbes())
+             .put("attribution", store.attributionConservative() ? "conservative" : "exact");
+        }
+        String json = j.toString();
         Files.write(dir.resolve(store.testId() + ".json"), json.getBytes("UTF-8"));
     }
 
