@@ -258,6 +258,7 @@ java -cp <pjacoco-agent.jar> io.pjacoco.agent.output.TraceMergeMain \
 - `--shared <dir>`: 하위 디렉터리(`/shared/<service>/`)를 서비스로 발견해 `--drain-wait-ms`(기본 15000ms)만큼 비동기 다운스트림(Tram/CDC/Kafka) flush를 기다린 뒤 수집합니다. 명시 입력은 `--service-dir <name>=<dir>`(반복; drain-wait 없이 즉시).
 - 결과: `report/<service>/<testId>.exec` — **서비스별·testId별** 병합 커버리지(서비스 디렉터리 분리로 JaCoCo classId 충돌 회피). 미등록 traceId는 raw traceId를 testId로 폴백합니다.
 - 분산 실행 시 각 서비스의 reaper idle 임계를 drain-wait보다 짧게(예: `traceIdleFlushMillis=5000`) 두어 수집 시점에 `.exec`가 준비되도록 하세요.
+- **실증 E2E:** [`agent/e2e/legacy-tram-distributed-coverage.sh`](agent/e2e/legacy-tram-distributed-coverage.sh)가 legacy-tram Brave 3-서비스 스택(order-web→reservation→Kafka/CDC→ledger)에서 이 전체 흐름을 end-to-end로 검증하며, downstream ledger 서비스(Kafka/CDC async)의 커버리지가 동일 testId로 귀속됨을 실측합니다(order-web classCount=6, reservation=6, ledger=2).
 
 ## 에이전트 직접 사용 (저수준)
 
