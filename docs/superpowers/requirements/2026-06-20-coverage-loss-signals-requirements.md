@@ -129,16 +129,16 @@
 
 | REQ-ID | 요구사항 | 수용 테스트 | Level | Status |
 |--------|----------|-------------|-------|--------|
-| CLS-REQ-001 | servlet 무-baggage·무컨텍스트(윈도우 내) → WARN+카운터 | `MissingTestIdInboundIT#missingId_increments_and_warnsOnce` · `#withBaggage_noSignal` · `#noActiveStore_noSignal` | integration | 🔴 planned |
-| CLS-REQ-002 | 무컨텍스트 드롭 카운트 + active==0 미귀속 분류 | `OrphanProbeCounterIT#noContextThread_incrementsDroppedNoContext` · `#noActiveStore_incrementsUnattributedDrops` | integration | 🔴 planned |
-| CLS-REQ-003 | servlet 아닌 cross-thread 손실 포착 | `CrossThreadDropIT#asyncWorker_incrementsDroppedNoContext` | integration | 🔴 planned |
-| CLS-REQ-004 | per-test 플래그(직렬, classCount=0, race-safe) | `IncompleteAttributionSerialIT#workerOnlyTest_flaggedExact_notDiscarded` · `#trulyEmpty_discarded` | integration | 🔴 planned |
-| CLS-REQ-005 | per-test 플래그(병렬, conservative) | `IncompleteAttributionParallelIT#concurrentDrops_flaggedConservative_noLoss` | integration | 🔴 planned |
-| CLS-REQ-006 | 오탐 0(in-thread/MockMvc surrogate 무신호) | `NoFalsePositiveInThreadIT#directCall_noSignal` · `#contextSetServletDispatch_noSignal` | integration | 🔴 planned |
-| CLS-REQ-007 | shutdown summary 카운터 노출 | `MetricsTest#summary_includesLossCounters` (확장, 값 단언) | unit | 🔴 planned |
-| CLS-REQ-008 | 회귀 무손상 & sidecar 후방호환 | `ExecWriterTest#noDrop_omitsAttributionFields` · `#withDrop_emitsAttributionFields` + `:agent:e2eTest`/`e2eJakartaTest`/`e2eCondyTest` green | e2e + integration | 🔴 planned |
+| CLS-REQ-001 | servlet 무-baggage·무컨텍스트(윈도우 내) → WARN+카운터 | `MissingTestIdInboundIT#missingId_increments_and_warnsOnce` · `#withBaggage_noSignal` · `#noActiveStore_noSignal` | integration | 🟢 green |
+| CLS-REQ-002 | 무컨텍스트 드롭 카운트 + active==0 미귀속 분류 | `OrphanProbeCounterIT#noContextThread_incrementsDroppedNoContext` · `#noActiveStore_incrementsUnattributedDrops` | integration | 🟢 green |
+| CLS-REQ-003 | servlet 아닌 cross-thread 손실 포착 | `CrossThreadDropIT#asyncWorker_incrementsDroppedNoContext` | integration | 🟢 green |
+| CLS-REQ-004 | per-test 플래그(직렬, classCount=0, race-safe) | `IncompleteAttributionSerialIT#workerOnlyTest_flaggedExact_notDiscarded` · `#trulyEmpty_discarded` | integration | 🟢 green |
+| CLS-REQ-005 | per-test 플래그(병렬, conservative) | `IncompleteAttributionParallelIT#concurrentDrops_flaggedConservative_noLoss` | integration | 🟢 green |
+| CLS-REQ-006 | 오탐 0(in-thread/MockMvc surrogate 무신호) | `NoFalsePositiveInThreadIT#directCall_noSignal` · `#contextSetServletDispatch_noSignal` | integration | 🟢 green |
+| CLS-REQ-007 | shutdown summary 카운터 노출 | `MetricsTest#summary_includesLossCounters` (확장, 값 단언) | unit | 🟢 green |
+| CLS-REQ-008 | 회귀 무손상 & sidecar 후방호환 | `ExecWriterTest#noDrop_omitsAttributionFields` · `#withDrop_emitsAttributionFields` + `:agent:e2eTest`/`e2eJakartaTest`/`e2eCondyTest` green | e2e + integration | 🟢 green |
 
-Coverage: 0/8 green (0%) — target 100% (대상: Must 8개; Should/Could/Won't 없음, 연기 없음)
+Coverage: 8/8 green (100%) — target 100% (대상: Must 8개; Should/Could/Won't 없음, 연기 없음)
 
 ## E2E 연동 규칙 (구현 단계)
 
