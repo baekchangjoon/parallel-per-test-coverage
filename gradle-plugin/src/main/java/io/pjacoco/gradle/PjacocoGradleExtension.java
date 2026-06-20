@@ -9,7 +9,7 @@ import org.gradle.api.provider.Property;
  *
  * <pre>{@code
  * pjacoco {
- *     agentVersion.set("1.1.0")                    // default: PjacocoPlugin.DEFAULT_AGENT_VERSION
+ *     agentVersion.set("1.2.0")                    // default: PjacocoPlugin.DEFAULT_AGENT_VERSION
  *     port.set(6310)
  *     includes.set(listOf("com.example.*"))
  *     excludes.set(emptyList())
