@@ -68,7 +68,7 @@ class PjacocoInProcessFunctionalTest {
     /** Writes the consumer project (two distinct SUT classes, no @ExtendWith) and runs its :test.
      *  When {@code aggregateOff}, adds {@code aggregate.set(false)} to the pjacoco block. */
     private BuildResult writeAndRunConsumer(Path consumer, boolean aggregateOff) throws IOException {
-        String version = System.getProperty("pjacoco.it.version", "1.0.0");
+        String version = ItSupport.itVersion();
         Path repo = Files.createDirectories(consumer.resolve("flatrepo"));
         Files.copy(Path.of(System.getProperty("pjacoco.it.agentJar")), repo.resolve("pjacoco-agent-" + version + ".jar"));
         Files.copy(Path.of(System.getProperty("pjacoco.it.testkitJar")), repo.resolve("pjacoco-testkit-core-" + version + ".jar"));

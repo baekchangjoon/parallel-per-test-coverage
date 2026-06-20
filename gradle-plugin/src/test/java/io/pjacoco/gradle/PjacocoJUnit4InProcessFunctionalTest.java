@@ -126,7 +126,7 @@ class PjacocoJUnit4InProcessFunctionalTest {
     // ---- shared scaffolding ----
 
     private Path prepareRepo(Path consumer) throws IOException {
-        String version = System.getProperty("pjacoco.it.version", "1.0.0");
+        String version = ItSupport.itVersion();
         Path repo = Files.createDirectories(consumer.resolve("flatrepo"));
         Files.copy(Path.of(System.getProperty("pjacoco.it.agentJar")), repo.resolve("pjacoco-agent-" + version + ".jar"));
         Files.copy(Path.of(System.getProperty("pjacoco.it.testkitJar")), repo.resolve("pjacoco-testkit-core-" + version + ".jar"));
@@ -135,7 +135,7 @@ class PjacocoJUnit4InProcessFunctionalTest {
     }
 
     private static String buildScript(Path repo, int port, boolean junit4Auto) {
-        String version = System.getProperty("pjacoco.it.version", "1.0.0");
+        String version = ItSupport.itVersion();
         String junit4AutoLine = junit4Auto ? "" : "    junit4Auto.set(false)\n";
         return "plugins { java; id(\"io.pjacoco.gradle\") }\n"
               + "repositories { mavenCentral(); flatDir { dirs(\"" + repo.toUri().getPath() + "\") } }\n"
