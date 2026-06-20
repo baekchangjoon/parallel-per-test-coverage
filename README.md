@@ -246,6 +246,19 @@ POST /__coverage__/trace/map?traceId=<32hex>&testId=<FQCN%23method>
 
 > **행위 변화 (C2):** `PjacocoExtension`(JUnit 5) 및 `PjacocoRule`(JUnit 4) 블랙박스 어댑터가 이제 testId를 `FQCN#method`(완전정규화 클래스명#메서드명)로 산출합니다 — 이전 SimpleClassName 형식과 달라질 수 있으므로 기존 `.exec` 파일명 패턴을 사용하는 스크립트는 확인하세요.
 
+### 서비스 간 분산 병합 (C3)
+
+여러 서비스에 걸친 한 테스트의 커버리지를 모으려면, 각 서비스가 **공유 볼륨**의 자기 하위 디렉터리에 per-traceId `.exec`를 쓰게 하고(에이전트 옵션 `destfile=/shared/<service>` + `traceKeyAutoCreate=true`), 상시 가동 서비스는 idle reaper가 JVM 종료 없이 flush합니다(위 "trace-store 생명주기"). 테스트 종료 후 러너가 중앙 `trace-map.properties`(`traceId=FQCN#method`)를 한 번 작성하고, 다음 CLI로 **drain-wait 수집·병합**합니다:
+
+```bash
+java -cp <pjacoco-agent.jar> io.pjacoco.agent.output.TraceMergeMain \
+  --shared /shared --map trace-map.properties --report ./report --drain-wait-ms 15000
+```
+
+- `--shared <dir>`: 하위 디렉터리(`/shared/<service>/`)를 서비스로 발견해 `--drain-wait-ms`(기본 15000ms)만큼 비동기 다운스트림(Tram/CDC/Kafka) flush를 기다린 뒤 수집합니다. 명시 입력은 `--service-dir <name>=<dir>`(반복; drain-wait 없이 즉시).
+- 결과: `report/<service>/<testId>.exec` — **서비스별·testId별** 병합 커버리지(서비스 디렉터리 분리로 JaCoCo classId 충돌 회피). 미등록 traceId는 raw traceId를 testId로 폴백합니다.
+- 분산 실행 시 각 서비스의 reaper idle 임계를 drain-wait보다 짧게(예: `traceIdleFlushMillis=5000`) 두어 수집 시점에 `.exec`가 준비되도록 하세요.
+
 ## 에이전트 직접 사용 (저수준)
 
 플러그인 없이 에이전트 jar를 직접 `-javaagent`로 다룰 수도 있습니다.

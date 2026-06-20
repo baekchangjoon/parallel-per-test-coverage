@@ -238,13 +238,13 @@
 | REQ-012 | 미등록 raw traceId | `UnmappedTraceReportIT#rawTraceIdAsTestId` + `TraceCoverageMergerTest#unmappedTraceFallsBackToRawAndCounts` — 분산 인프라는 C3 범위라 최고 실현가능 레벨은 integration(transport-독립 리포트 레이어 검증) | integration (최고 실현가능) | 🟢 green |
 | REQ-013 | N:1 병합 | `TraceCoverageMergerTest#multipleTraceIdsOneTestId` (+ `aggregateExecAndDirsAreExcluded` 부가 증거) | integration | 🟢 green |
 | REQ-014 | testId 정규화 | `TestIdNormalizationTest#toFqcnHashMethod` (unit) + `PjacocoExtensionTest`/`PjacocoRuleTest` (어댑터 FQCN 정렬 확인) | unit + integration | 🟢 green |
-| REQ-015 | 서비스 간 병합 리포트 | `LegacyTramDistributedE2E` + `TaintedSpringDistributedE2E` | E2E | 🔴 planned |
+| REQ-015 | 서비스 간 병합 리포트 | `DistributedCoverageMergerTest#{perServicePerTestIdReport, multipleTraceIdsOneTestIdWithinServiceMerged, unmappedTraceIdFallsBackToRawPerService}`(서비스 축 병합 메커니즘) + `TraceMergeMainTest`(CLI). 전파 전제 입증: GA-1(C1) + GA-2(C1 cross-JVM, ga-spike-results) + R1(legacy-tram trace 생존). **조립된 분산 Docker E2E**(`LegacyTramDistributedE2E`/`TaintedSpringDistributedE2E`)는 외부 다중-서비스 스택 기동 필요 → 전용 환경 실행 잔여 | integration(메커니즘) + E2E(잔여) | 🟡 partial |
 | REQ-016 | flush 생명주기(idle reaper) | `TraceStoreLifecycleIT#idleReaperFlushWithoutJvmExit` + `TraceStoreReaperTest#{idleStoreFlushedWithoutJvmExit, idleStoreEvictedAfterGrace}` — 주입 clock으로 결정론, Docker 다중서비스는 C3b. 비고: 기존 control stop(`/test/stop`)은 즉시 flush 수단으로 유지; design §6.4 (b) scope-close flush는 C3a 범위 외 | integration | 🟢 green |
 | REQ-017 | late-write grace | `TraceStoreReaperTest#lateWriteWithinGraceIsReflushedNotLost` | integration | 🟢 green |
 | REQ-018 | in-flight eviction 방지 | `TestStoreRegistryEvictionTest#{idleEvictedBeforeInFlight, unavoidableInFlightEvictionIsCounted}` — 비고: 비-트레이서 모드에서 lastActivityMillis = startedAtMillis → idle-first == oldest-start, 무회귀 | integration | 🟢 green |
 | REQ-019 | 관측성 카운터 | `MetricsTest#{scopeHookInjectionFailuresStartsAtZero, fallbackActivationsStartsAtZero, summaryIncludesNewCounters, installFailureIncrementsCounterAndDoesNotPropagate, unmappedTraceIdsStartsAtZeroAndCounts, evictedInFlightTracesStartsAtZeroAndCounts}`. C1+C2+C3a 전 카운터 완료 | unit/integration | 🟢 green |
 | REQ-022 | 트레이서 모드 store 자동생성 | `TestStoreRegistryTest#{forCoverageKeyAutoCreatesWhenEnabled, forCoverageKeyStrictReturnsNullWhenDisabled}` | unit | 🟢 green |
-| REQ-023 | C3 수집 + drain 대기 | `DistributedCollectIT#downstreamCollectedAfterDrain` | E2E | 🔴 planned |
+| REQ-023 | C3 수집 + drain 대기 | `DistributedCollectIT#downstreamCollectedAfterDrain`(drain-wait 중 늦은 다운스트림 `.exec` 무유실 수집, 주입 Sleeper 결정론) | integration(최고 실현가능; Docker CDC는 분산 E2E에서 부수 실측) | 🟢 green |
 | REQ-024 | scope-fail 동기 폴백 | GA-1 PASS → scope weave가 주 경로; choke-point 폴백 미발동, C3에서 분산 안전망으로 재평가. | integration | 🔵 deferred |
 | REQ-020 | [Won't] messaging activator | — | — | 🔵 out-of-scope |
 | REQ-021 | [Won't] 운영 per-request | — | — | 🔵 out-of-scope |
@@ -267,6 +267,8 @@
 - REQ-019 (Should) 🟢: C1+C2+C3a 전 카운터 완료 (evictedInFlightTraces C3a에서 추가)
 - **C3a Must+Should(대상) 커버리지: 4/4 (100%)**
 
-Coverage(전체): C1 Must 12/12 🟢; C2 Must+Should 4/4 🟢; C3a REQ-016/017/018/019 4/4 🟢; C3 장기(REQ-015/023) 🔴 planned. 제외: Won't 2 (🔵 REQ-020, REQ-021), deferred 1 (🔵 REQ-024).
+Coverage(전체): C1 Must 12/12 🟢; C2 Must+Should 4/4 🟢; C3a REQ-016/017/018/019 4/4 🟢; **C3b: REQ-023 🟢(integration, 최고 실현가능), REQ-015 🟡 partial**(서비스 축 병합·수집·CLI 메커니즘 green + 전파 전제 GA-1/GA-2/R1 입증; 조립된 분산 Docker E2E는 전용 환경 실행 잔여). 제외: Won't 2 (🔵 REQ-020, REQ-021), deferred 1 (🔵 REQ-024).
+
+**C3b 완료 상태:** REQ-023 🟢. REQ-015 🟡 partial — `DistributedCoverageMerger`(서비스 축)·`DistributedCollector`(drain-wait)·`TraceMergeMain`(CLI)가 in-process로 cross-service 병합/수집을 입증하고, trace 전파는 GA-1(C1 단일 서비스)·GA-2(C1 cross-JVM mindgraph)·R1(legacy-tram)로 입증됨. **남은 것은 이 조각들을 실제 다중-서비스 Docker 스택에서 조립한 black-box E2E**(`LegacyTram/TaintedSpringDistributedE2E`, `assumeTrue` env 게이트) — Docker·외부 환경(legacy-tram/tainted-spring) present로 실행 가능하나 전용 실행 단계. 이 E2E green 시 REQ-015 → 🟢로 매트릭스 100% 완성.
 
 (Must: 001,002,003,004,005,006,007,008,009,010,011,012,015,016,022,023 = 16. Should: 013,014,017,018,019,024 = 6. C1 Must 대상: 001,002,003,004,005,006,007,008,009,010,022 = 11 + REQ-022 = 12.)
