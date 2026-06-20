@@ -73,9 +73,15 @@ class PjacocoJUnit4InProcessFunctionalTest {
         assertTrue(Files.exists(out.resolve("com.consumer.ParamTest#run[0].exec")), "param set 0 must have its own .exec");
         assertTrue(Files.exists(out.resolve("com.consumer.ParamTest#run[1].exec")), "param set 1 must have its own .exec");
 
-        // @Test(timeout): empty store guard -> no .exec (documented limitation, not a failure).
-        assertFalse(Files.exists(out.resolve("com.consumer.TimeoutTest#coversTimeout.exec")),
-                "a @Test(timeout) test runs on a new thread -> no per-test .exec");
+        // @Test(timeout): the body runs on a new thread (FailOnTimeout), so the test thread records
+        // nothing. With coverage-loss signals, that cross-thread drop is now attributed to the active
+        // store and flushed, so a per-test .exec IS written and flagged incompleteAttribution=true —
+        // the loss is made VISIBLE instead of silently discarded (previously: no .exec).
+        assertTrue(Files.exists(out.resolve("com.consumer.TimeoutTest#coversTimeout.exec")),
+                "a @Test(timeout) cross-thread test now produces a flagged per-test .exec (loss made visible)");
+        String to = read(out.resolve("com.consumer.TimeoutTest#coversTimeout.json"));
+        assertTrue(to.contains("\"incompleteAttribution\":true"),
+                "the @Test(timeout) cross-thread loss must be flagged incompleteAttribution; was: " + to);
     }
 
     @Test
