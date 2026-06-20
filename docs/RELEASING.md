@@ -34,9 +34,22 @@
    - 산출 자산: `pjacoco-agent` + testkit 4종 + `pjacoco-maven-plugin` jar(+각 `.sha256`).
 4. 릴리스 노트에 **소비자 영향(BREAKING 등)**을 명시한다(자동 생성 노트만으로는 약함).
 
+## 릴리스 노트 (소비자 영향 명시)
+
+`--generate-notes`(커밋 자동 요약)만으로는 **BREAKING/동작 변화**가 묻힌다. 다음에 해당하면 릴리스 노트
+상단에 **`### BREAKING` / `### 동작 변화` 섹션을 직접 추가**한다(`gh release edit <tag> --notes-file ...`):
+
+- 산출물/좌표 이름 변경, 옵션 기본값 변경, 출력 형식·파일명 변경 → BREAKING + 마이그레이션 한 줄.
+- 관측 가능한 동작 변화(예: `@Test(timeout)`이 이제 `incompleteAttribution` `.exec`를 생성) → 동작 변화.
+
+## agent jar 이름 변경 + deprecated alias (v1.3.0~)
+
+- agent jar 산출물명 = `pjacoco-agent`(= Maven artifactId). v1.3.0에서 구명 `jacocoagent-parallel`에서
+  변경 — **이름이 아니라 좌표 `io.pjacoco:pjacoco-agent`로 의존**할 것.
+- `release.yml`은 마이그레이션 기간 동안 구이름 `jacocoagent-parallel-<ver>.jar`를 **deprecated alias 자산**
+  으로 함께 첨부한다(스테이징 jar 개수 가드 = 7). **v1.4.x 이후 이 alias 복사·개수 가드(7→6)를 제거**한다.
+
 ## 참고
 
 - 공개 저장소 자동 배포(Maven Central / Gradle Plugin Portal)는 아직 미배선 — `docs/PUBLISHING.md`,
   REQ-D03(`docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md`) 참고.
-- agent jar 산출물명은 `pjacoco-agent`(= Maven artifactId). v1.3.0에서 구명 `jacocoagent-parallel`에서
-  변경됨 — 이름이 아니라 좌표 `io.pjacoco:pjacoco-agent`로 의존할 것.
