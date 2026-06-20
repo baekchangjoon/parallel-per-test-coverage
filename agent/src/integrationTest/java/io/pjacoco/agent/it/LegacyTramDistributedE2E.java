@@ -1,9 +1,9 @@
 package io.pjacoco.agent.it;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test;
  *       (Tram/Kafka/CDC) → ledger.</li>
  *   <li>Waits 20 s for idle-reaper flush and async CDC drain.</li>
  *   <li>Merges via {@code TraceMergeMain} with a central traceId→testId map.</li>
- *   <li>Asserts that {@code report/<service>/<testId>.exec} exists and is non-empty (>40 B)
+ *   <li>Asserts that {@code report/<service>/<testId>.exec} exists and is non-empty (>70 B)
  *       for ALL THREE services including the downstream Kafka/CDC ledger.</li>
  * </ol>
  *
@@ -75,13 +75,12 @@ class LegacyTramDistributedE2E {
         // --- run the script ---
         ProcessBuilder pb = new ProcessBuilder("bash", script.toAbsolutePath().toString())
                 .inheritIO();
-        if (tramRoot != null) {
-            pb.environment().put("LEGACY_TRAM_ROOT", tramRoot);
-        }
+        pb.environment().put("LEGACY_TRAM_ROOT", tramRoot);
         Process proc = pb.start();
         boolean finished = proc.waitFor(15, TimeUnit.MINUTES);
         if (!finished) {
             proc.destroyForcibly();
+            fail("legacy-tram distributed E2E timed out after 15 min");
         }
         assertEquals(0, proc.exitValue(),
                 "REQ-015 live E2E script exited with non-zero status — see output above.");
