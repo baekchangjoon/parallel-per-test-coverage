@@ -44,7 +44,7 @@ public final class PjacocoRule extends TestWatcher {
 
     private static String testId(Description description) {
         Class<?> testClass = description.getTestClass();
-        String className = testClass != null ? testClass.getSimpleName() : description.getClassName();
+        String className = testClass != null ? testClass.getName() : description.getClassName();
         return className + "#" + description.getMethodName();
     }
 }

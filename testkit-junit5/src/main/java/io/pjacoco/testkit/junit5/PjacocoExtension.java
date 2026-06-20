@@ -37,6 +37,6 @@ public final class PjacocoExtension implements BeforeEachCallback, AfterEachCall
     }
 
     private static String testId(ExtensionContext context) {
-        return context.getRequiredTestClass().getSimpleName() + "#" + context.getRequiredTestMethod().getName();
+        return context.getRequiredTestClass().getName() + "#" + context.getRequiredTestMethod().getName();
     }
 }

@@ -65,14 +65,14 @@ class PjacocoExtensionTest {
         ExtensionContext ctx = mockContext(false);
 
         ext.beforeEach(ctx);
-        assertEquals("PjacocoExtensionTest#sampleMethod", Pjacoco.currentTestId(),
+        assertEquals("io.pjacoco.testkit.junit5.PjacocoExtensionTest#sampleMethod", Pjacoco.currentTestId(),
                 "id must be active during the test");
         ext.afterEach(ctx);
         assertNull(Pjacoco.currentTestId(), "id must be cleared after the test");
 
         assertEquals(2, queries.size());
-        assertEquals("/__coverage__/test/start?testId=PjacocoExtensionTest%23sampleMethod", queries.get(0));
-        assertEquals("/__coverage__/test/stop?testId=PjacocoExtensionTest%23sampleMethod&result=passed", queries.get(1));
+        assertEquals("/__coverage__/test/start?testId=io.pjacoco.testkit.junit5.PjacocoExtensionTest%23sampleMethod", queries.get(0));
+        assertEquals("/__coverage__/test/stop?testId=io.pjacoco.testkit.junit5.PjacocoExtensionTest%23sampleMethod&result=passed", queries.get(1));
     }
 
     @Test
@@ -81,7 +81,7 @@ class PjacocoExtensionTest {
         ExtensionContext ctx = mockContext(true);
         ext.beforeEach(ctx);
         ext.afterEach(ctx);
-        assertEquals("/__coverage__/test/stop?testId=PjacocoExtensionTest%23sampleMethod&result=failed",
+        assertEquals("/__coverage__/test/stop?testId=io.pjacoco.testkit.junit5.PjacocoExtensionTest%23sampleMethod&result=failed",
                 queries.get(1));
     }
 }
