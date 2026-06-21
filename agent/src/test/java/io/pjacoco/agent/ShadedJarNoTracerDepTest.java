@@ -32,6 +32,18 @@ class ShadedJarNoTracerDepTest {
     /** OpenTelemetry package prefix that must not appear in the shaded agent jar. */
     private static final String OTEL_PREFIX = "io/opentelemetry/";
 
+    /**
+     * Un-relocated ASM package prefix that must not appear in the shaded agent jar. jacoco-core
+     * depends on org.objectweb.asm; if it ships un-relocated, the embedded jacoco resolves ASM from
+     * the target app's classpath and throws NoSuchMethodError (e.g. Type.getArgumentCount(String),
+     * ASM 9.6+) against an older app ASM, silently dropping coverage. All ASM must be relocated under
+     * io/pjacoco/shaded/.
+     */
+    private static final String UNRELOCATED_ASM_PREFIX = "org/objectweb/asm/";
+
+    /** Where jacoco's ASM dependency must live after relocation (see agent/build.gradle.kts). */
+    private static final String RELOCATED_ASM_PREFIX = "io/pjacoco/shaded/asm/";
+
     /** A representative agent class whose bytecode major version is checked. */
     private static final String PROBE_CLASS = "io/pjacoco/agent/probe/CoverageBridge.class";
 
@@ -74,6 +86,35 @@ class ShadedJarNoTracerDepTest {
         }
         assertTrue(offending.isEmpty(),
                 "shaded jar must contain NO io/opentelemetry/* classes (REQ-002), but found: " + offending);
+    }
+
+    @Test
+    @EnabledIfSystemProperty(named = "pjacoco.shadedJar", matches = ".+")
+    void shadedJarContainsNoUnrelocatedAsmClasses() throws Exception {
+        File jar = new File(System.getProperty("pjacoco.shadedJar"));
+        assertTrue(jar.isFile(), "shaded jar not found: " + jar);
+
+        List<String> offending = new ArrayList<String>();
+        boolean relocatedAsmPresent = false;
+        try (ZipFile zf = new ZipFile(jar)) {
+            for (Enumeration<? extends ZipEntry> e = zf.entries(); e.hasMoreElements(); ) {
+                String name = e.nextElement().getName();
+                if (name.startsWith(UNRELOCATED_ASM_PREFIX)) {
+                    offending.add(name);
+                } else if (name.startsWith(RELOCATED_ASM_PREFIX)) {
+                    relocatedAsmPresent = true;
+                }
+            }
+        }
+        assertTrue(offending.isEmpty(),
+                "shaded jar must contain NO un-relocated org/objectweb/asm/* classes — jacoco's ASM "
+                        + "must be relocated under io/pjacoco/shaded/ so it cannot clash with an older "
+                        + "ASM on the target app's classpath. Found: " + offending);
+        // Positive guard: absence alone would also pass if jacoco ever stopped bundling ASM. Confirm the
+        // ASM the embedded jacoco binds to is actually present, under the relocated package.
+        assertTrue(relocatedAsmPresent,
+                "shaded jar must contain the relocated ASM under " + RELOCATED_ASM_PREFIX
+                        + " (jacoco's bundled ASM) — none found.");
     }
 
     @Test
