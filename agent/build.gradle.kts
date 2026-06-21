@@ -47,6 +47,13 @@ tasks.shadowJar {
     // un-relocated ones used by the in-process integration tests.
     relocate("org.jacoco", "io.pjacoco.shaded.jacoco")
     relocate("net.bytebuddy", "io.pjacoco.shaded.bytebuddy")
+    // jacoco-core depends on org.objectweb.asm; relocate it too. Otherwise the embedded jacoco resolves
+    // org.objectweb.asm from the TARGET app's classpath — and if that app ships an older ASM (e.g. a
+    // transitive org.ow2.asm:asm:9.1), jacoco's Instrumenter throws NoSuchMethodError on the newer ASM
+    // API it calls (e.g. Type.getArgumentCount(String), added in ASM 9.6) for classes whose bytecode
+    // exercises that path (methods with exception handlers, etc.). ProbeInstrumentation.transform's
+    // catch(Throwable) then silently swallows it, dropping those classes' coverage with no signal.
+    relocate("org.objectweb.asm", "io.pjacoco.shaded.asm")
     manifest {
         attributes(
             "Premain-Class" to "io.pjacoco.agent.Bootstrap",
