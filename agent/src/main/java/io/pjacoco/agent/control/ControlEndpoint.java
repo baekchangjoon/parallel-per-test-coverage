@@ -3,7 +3,10 @@ package io.pjacoco.agent.control;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
+import io.pjacoco.agent.AgentOptions;
 import io.pjacoco.agent.mapping.TestIdMappingRegistry;
+import io.pjacoco.agent.output.ExecWriter;
+import io.pjacoco.agent.store.TestStore;
 import io.pjacoco.agent.store.TestStoreRegistry;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -16,13 +19,18 @@ import java.util.Map;
 public final class ControlEndpoint {
     private final TestStoreRegistry registry;
     private final TestIdMappingRegistry mapping;
+    private final ExecWriter writer;
+    private final AgentOptions options;
     private final String host;
     private final int port;
     private HttpServer server;
 
-    public ControlEndpoint(TestStoreRegistry registry, TestIdMappingRegistry mapping, String host, int port) {
+    public ControlEndpoint(TestStoreRegistry registry, TestIdMappingRegistry mapping,
+                           ExecWriter writer, AgentOptions options, String host, int port) {
         this.registry = registry;
         this.mapping = mapping;
+        this.writer = writer;
+        this.options = options;
         this.host = host;
         this.port = port;
     }
@@ -58,8 +66,65 @@ public final class ControlEndpoint {
         Map<String, String> q = query(ex);
         String testId = q.get("testId");
         if (testId == null) { respond(ex, 400, "missing testId"); return; }
-        registry.stop(testId, q.get("result"));
+
+        String format = q.getOrDefault("format", "text");
+        boolean persist = parseBoolean(q.get("persist"), options.persistOnStop());
+
+        TestStoreRegistry.StopResult closed = registry.closeForStop(testId, q.get("result"));
+        if (closed == null) {
+            if ("binary".equalsIgnoreCase(format)) {
+                respond(ex, 404, "unknown testId");
+            } else {
+                respond(ex, 200, "stopped " + testId);
+            }
+            return;
+        }
+
+        if ("binary".equalsIgnoreCase(format)) {
+            handleBinaryStop(ex, closed, persist);
+            return;
+        }
+
+        registry.persistClosed(closed, true, true);
+        registry.markStopCompleted();
         respond(ex, 200, "stopped " + testId);
+    }
+
+    private void handleBinaryStop(HttpExchange ex, TestStoreRegistry.StopResult closed,
+                                  boolean persist) throws IOException {
+        TestStore store = closed.snapshot();
+        setBinaryHeaders(ex, closed, persist);
+        if (closed.wasEmpty()) {
+            ex.sendResponseHeaders(204, -1);
+            ex.close();
+            registry.markStopCompleted();
+            return;
+        }
+        try {
+            byte[] execBytes = writer.toExecBytes(store, System.currentTimeMillis());
+            if (persist) {
+                registry.persistClosed(closed, true, false);
+            }
+            ex.getResponseHeaders().set("Content-Type", "application/octet-stream");
+            ex.sendResponseHeaders(200, execBytes.length);
+            OutputStream os = ex.getResponseBody();
+            os.write(execBytes);
+            os.close();
+            registry.markStopCompleted();
+        } catch (Exception e) {
+            respond(ex, 500, "serialization error: " + e.getMessage());
+            registry.markStopCompleted();
+        }
+    }
+
+    private void setBinaryHeaders(HttpExchange ex, TestStoreRegistry.StopResult closed, boolean persist) {
+        TestStore store = closed.snapshot();
+        ex.getResponseHeaders().set("X-Pjacoco-TestId", closed.testId());
+        ex.getResponseHeaders().set("X-Pjacoco-ClassCount", String.valueOf(store.classCount()));
+        ex.getResponseHeaders().set("X-Pjacoco-RecordedProbes",
+                String.valueOf(writer.countRecordedProbes(store)));
+        ex.getResponseHeaders().set("X-Pjacoco-DroppedProbes", String.valueOf(store.droppedProbes()));
+        ex.getResponseHeaders().set("X-Pjacoco-Persisted", String.valueOf(persist));
     }
 
     private void handleTraceMap(HttpExchange ex) throws IOException {
@@ -69,6 +134,13 @@ public final class ControlEndpoint {
         if (traceId == null || testId == null) { respond(ex, 400, "missing traceId or testId"); return; }
         mapping.register(traceId, testId);
         respond(ex, 200, "mapped " + traceId + " -> " + testId);
+    }
+
+    private static boolean parseBoolean(String value, boolean defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(value);
     }
 
     private static Map<String, String> query(HttpExchange ex) {
@@ -89,9 +161,10 @@ public final class ControlEndpoint {
 
     private static void respond(HttpExchange ex, int code, String body) throws IOException {
         byte[] b = body.getBytes("UTF-8");
+        ex.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
         ex.sendResponseHeaders(code, b.length);
         OutputStream os = ex.getResponseBody();
         os.write(b);
-        ex.close();
+        os.close();
     }
 }
