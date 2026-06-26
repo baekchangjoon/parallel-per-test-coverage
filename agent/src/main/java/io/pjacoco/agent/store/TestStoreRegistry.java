@@ -114,12 +114,67 @@ public final class TestStoreRegistry {
     }
 
     public synchronized void stop(String testId, String result) {
-        TestStore s = stores.remove(testId);
-        if (s == null) {
+        StopResult closed = closeForStop(testId, result);
+        if (closed == null) {
             log.warn("stop-missing", "stop for unknown testId=" + testId);
             return;
         }
-        flush(s, result, "complete");
+        persistClosed(closed, true, true);
+        markStopCompleted();
+    }
+
+    /** Close store and return snapshot for serialization. Removes from registry. */
+    public synchronized StopResult closeForStop(String testId, String result) {
+        TestStore store = stores.remove(testId);
+        if (store == null) {
+            return null;
+        }
+        boolean wasEmpty = store.classCount() == 0 && store.droppedProbes() == 0;
+        return new StopResult(store, testId, result, wasEmpty);
+    }
+
+    /** Optional disk persist after close (exec + sidecar if configured). */
+    public synchronized void persistClosed(StopResult closed, boolean writeExec, boolean writeSidecar) {
+        if (closed.wasEmpty()) {
+            return;
+        }
+        long stoppedAt = clock.getAsLong();
+        try {
+            if (writeExec) {
+                writer.writeExecFile(outputDir, closed.snapshot(), stoppedAt);
+            }
+            if (writeSidecar) {
+                writer.writeSidecarFile(outputDir, closed.snapshot(), closed.result(), commitSha,
+                        stoppedAt, "complete");
+            }
+        } catch (Exception e) {
+            metrics.swallowedExceptions.incrementAndGet();
+            log.warn("flush-error", "persist failed testId=" + closed.testId() + ": " + e);
+        }
+    }
+
+    /** Immutable snapshot returned when a store is closed for stop. */
+    public static final class StopResult {
+        private final TestStore snapshot;
+        private final String testId;
+        private final String result;
+        private final boolean wasEmpty;
+
+        public StopResult(TestStore snapshot, String testId, String result, boolean wasEmpty) {
+            this.snapshot = snapshot;
+            this.testId = testId;
+            this.result = result;
+            this.wasEmpty = wasEmpty;
+        }
+
+        public TestStore snapshot() { return snapshot; }
+        public String testId() { return testId; }
+        public String result() { return result; }
+        public boolean wasEmpty() { return wasEmpty; }
+    }
+
+    /** Increment tests-completed counter after a control-plane stop (binary or text). */
+    public void markStopCompleted() {
         metrics.testsCompleted.incrementAndGet();
     }
 

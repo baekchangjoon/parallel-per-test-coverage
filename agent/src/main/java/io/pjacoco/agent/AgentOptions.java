@@ -93,4 +93,8 @@ public final class AgentOptions {
      *  Set {@code control=false} for pure aggregate/in-process use to avoid the port bind cost and
      *  conflicts entirely. (REQ-U01) */
     public boolean control() { return Boolean.parseBoolean(get("control", "true")); }
+
+    /** Whether {@code POST /__coverage__/test/stop} also writes {@code <testId>.exec} to disk.
+     *  Default true for backward compatibility. Query param {@code persist=} overrides per request. */
+    public boolean persistOnStop() { return Boolean.parseBoolean(get("persistOnStop", "true")); }
 }

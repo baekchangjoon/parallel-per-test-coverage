@@ -60,8 +60,9 @@ public final class Bootstrap {
         final java.util.function.LongSupplier clockSupplier = new java.util.function.LongSupplier() {
             public long getAsLong() { return System.currentTimeMillis(); }
         };
+        final ExecWriter writer = new ExecWriter(options.incompleteAttributionThreshold());
         final TestStoreRegistry registry = new TestStoreRegistry(
-                outDir, new ExecWriter(options.incompleteAttributionThreshold()), metrics, log,
+                outDir, writer, metrics, log,
                 options.autoRegister(), options.maxStores(), clockSupplier,
                 options.traceKeyAutoCreate(), options.inFlightGuardMillis());
 
@@ -96,7 +97,8 @@ public final class Bootstrap {
         final ControlEndpoint[] endpointRef = new ControlEndpoint[1];
         if (options.control()) {
             try {
-                ControlEndpoint endpoint = new ControlEndpoint(registry, mapping, options.controlHost(), options.controlPort());
+                ControlEndpoint endpoint = new ControlEndpoint(registry, mapping, writer, options,
+                        options.controlHost(), options.controlPort());
                 int port = endpoint.start();
                 endpointRef[0] = endpoint;
                 System.setProperty("pjacoco.control-port", String.valueOf(port));

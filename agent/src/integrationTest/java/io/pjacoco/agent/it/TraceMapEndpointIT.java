@@ -1,6 +1,7 @@
 package io.pjacoco.agent.it;
 
 import static org.junit.jupiter.api.Assertions.*;
+import io.pjacoco.agent.AgentOptions;
 import io.pjacoco.agent.control.ControlEndpoint;
 import io.pjacoco.agent.mapping.TestIdMappingRegistry;
 import io.pjacoco.agent.observability.AgentLog;
@@ -46,7 +47,8 @@ class TraceMapEndpointIT {
         TestIdMappingRegistry mapping = new TestIdMappingRegistry(100);
         TestStoreRegistry reg = new TestStoreRegistry(dir, new ExecWriter(), new Metrics(),
                 new AgentLog(), false, 1000, System::currentTimeMillis);
-        ControlEndpoint ep = new ControlEndpoint(reg, mapping, "127.0.0.1", 0);
+        ControlEndpoint ep = new ControlEndpoint(reg, mapping, new ExecWriter(), AgentOptions.empty(),
+                "127.0.0.1", 0);
         int port = ep.start();
         try {
             // 1) register a mapping THROUGH the HTTP control plane (%23 -> '#')
@@ -69,7 +71,8 @@ class TraceMapEndpointIT {
         TestIdMappingRegistry mapping = new TestIdMappingRegistry(2);           // cap = 2
         TestStoreRegistry reg = new TestStoreRegistry(dir, new ExecWriter(), new Metrics(),
                 new AgentLog(), false, 1000, System::currentTimeMillis);
-        ControlEndpoint ep = new ControlEndpoint(reg, mapping, "127.0.0.1", 0);
+        ControlEndpoint ep = new ControlEndpoint(reg, mapping, new ExecWriter(), AgentOptions.empty(),
+                "127.0.0.1", 0);
         int port = ep.start();
         try {
             assertEquals(200, post(port, "/__coverage__/trace/map?traceId=t1&testId=com.x.T%23a"));
