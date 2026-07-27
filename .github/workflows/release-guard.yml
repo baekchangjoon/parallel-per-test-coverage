@@ -81,10 +81,21 @@ jobs:
             echo "require_release=1" >> "$GITHUB_OUTPUT"
           fi
 
+      # Two checkouts: the guard SCRIPT comes from the default branch (tags predating
+      # the guard don't ship it, and the current logic should judge old tags anyway);
+      # the code under VALIDATION is the tag itself. A push-tag event's default
+      # checkout ref would be the tag, so the default branch is named explicitly.
+      - uses: actions/checkout@v4
+        if: steps.tag.outputs.skip != '1'
+        with:
+          ref: refs/heads/${{ github.event.repository.default_branch }}
+          path: guard-src
+
       - uses: actions/checkout@v4
         if: steps.tag.outputs.skip != '1'
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
+          path: release-src
 
       - name: Set up JDK 17
         if: steps.tag.outputs.skip != '1'
@@ -93,6 +104,11 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
+          # Key the cache off the tree under validation only — otherwise every
+          # (main, tag) pair mints a new key and the cache never hits.
+          cache-dependency-path: |
+            release-src/**/*.gradle*
+            release-src/**/gradle-wrapper.properties
 
       - name: Validate source version + release assets
         if: steps.tag.outputs.skip != '1'
@@ -101,4 +117,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           REQUIRE_RELEASE: ${{ steps.tag.outputs.require_release }}
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/release-guard.sh
+        working-directory: release-src
+        run: bash ../guard-src/.github/scripts/release-guard.sh
