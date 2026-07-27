@@ -6,19 +6,50 @@ import java.util.Map;
 /** Parses {@code -javaagent:...=k=v,k=v}. Instrumentation-scope opts mirror jacoco; output/session
  *  opts are reinterpreted for the per-test model (see spec §6). */
 public final class AgentOptions {
-    private final Map<String, String> raw;
+    /** Every option key any accessor below reads. A key outside this set is a typo the user must
+     *  hear about: silently ignoring {@code destdirr=/x} sent output to the default {@code coverage/}
+     *  with no hint why (BUG-4, 2026-07-27 dogfooding). */
+    private static final java.util.Set<String> KNOWN_KEYS = new java.util.HashSet<String>(
+            java.util.Arrays.asList(
+                    "destdir", "destfile", "autoRegister", "lenient", "address", "port", "maxstores",
+                    "commitSha", "incompleteAttributionThreshold", "aggregate", "aggregateFile",
+                    "junit4Auto", "traceKeyAutoCreate", "maxTraceMappings",
+                    "traceReaperIntervalMillis", "traceIdleFlushMillis", "traceLateWriteGraceMillis",
+                    "inFlightGuardMillis", "includes", "excludes", "inclbootstrapclasses",
+                    "control", "persistOnStop"));
 
-    private AgentOptions(Map<String, String> raw) { this.raw = raw; }
+    private final Map<String, String> raw;
+    private final java.util.List<String> parseWarnings;
+
+    private AgentOptions(Map<String, String> raw, java.util.List<String> parseWarnings) {
+        this.raw = raw;
+        this.parseWarnings = parseWarnings;
+    }
 
     public static AgentOptions parse(String args) {
         Map<String, String> m = new HashMap<String, String>();
+        java.util.List<String> warnings = new java.util.ArrayList<String>();
         if (args != null && !args.isEmpty()) {
             for (String pair : args.split(",")) {
                 int i = pair.indexOf('=');
-                if (i > 0) m.put(pair.substring(0, i).trim(), pair.substring(i + 1).trim());
+                if (i > 0) {
+                    String key = pair.substring(0, i).trim();
+                    m.put(key, pair.substring(i + 1).trim());
+                    if (!KNOWN_KEYS.contains(key)) {
+                        warnings.add("unknown option '" + key + "' ignored");
+                    }
+                } else if (!pair.trim().isEmpty()) {
+                    warnings.add("malformed option '" + pair.trim() + "' ignored (expected key=value)");
+                }
             }
         }
-        return new AgentOptions(m);
+        return new AgentOptions(m, warnings);
+    }
+
+    /** Human-readable warnings for unknown/malformed option tokens; empty when all were understood.
+     *  Surfaced by Bootstrap as {@code [pjacoco][WARN]} lines at startup. */
+    public java.util.List<String> parseWarnings() {
+        return java.util.Collections.unmodifiableList(parseWarnings);
     }
 
     public static AgentOptions empty() { return parse(null); }

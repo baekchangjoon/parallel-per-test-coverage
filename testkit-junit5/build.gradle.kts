@@ -18,7 +18,9 @@ dependencies {
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
     testImplementation("org.mockito:mockito-core:5.12.0")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // testImplementation (not runtimeOnly): ParameterizedInvocationEndToEndTest drives the
+    // launcher programmatically to run an embedded @ParameterizedTest through the extension.
+    testImplementation("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.test { useJUnitPlatform() }

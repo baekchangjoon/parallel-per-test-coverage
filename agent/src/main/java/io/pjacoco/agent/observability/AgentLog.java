@@ -18,7 +18,10 @@ public final class AgentLog {
         }
     }
 
-    public void info(String message) { System.out.println("[pjacoco] " + message); }
+    /** stderr, not stdout: surefire owns the forked JVM's stdout as its process channel, and
+     *  writing there triggers "Corrupted channel by directly writing to native stream" warnings
+     *  plus a dumpstream on every build (BUG-7, 2026-07-27 dogfooding). */
+    public void info(String message) { System.err.println("[pjacoco] " + message); }
 
     /** Self-identifying error line on stderr, rate-limited per key like {@link #warn} so a hot-path
      *  failure cannot flood output. Used so a premain init failure surfaces as a diagnosable

@@ -88,7 +88,18 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 >
 > **소스 빌드가 어렵다면**, v1.3.0+ [GitHub Release](../../releases/latest)에 **agent·testkit(4종)·maven-plugin
 > jar이 자산으로 첨부**됩니다 — 받아서 `mvn install:install-file`로 로컬 설치하거나 Gradle `flatDir`로 직접
-> 쓸 수 있습니다(Gradle 플러그인 id 는 여전히 Plugin Portal/mavenLocal 경유).
+> 쓸 수 있습니다(Gradle 플러그인 id 는 여전히 Plugin Portal/mavenLocal 경유 — 릴리스 자산에는 없음).
+>
+> ```bash
+> # v1.4.1+ jar에는 POM이 내장돼 있어 GAV 지정 없이 설치됩니다. 순서: agent 먼저(플러그인·킷이 참조).
+> mvn install:install-file -Dfile=pjacoco-agent-1.4.1.jar \
+>   -DgroupId=io.pjacoco -DartifactId=pjacoco-agent -Dversion=1.4.1 -Dpackaging=jar   # agent는 shaded jar라 GAV 지정
+> mvn install:install-file -Dfile=pjacoco-testkit-1.4.1.jar            # POM 내장
+> mvn install:install-file -Dfile=pjacoco-testkit-junit5-1.4.1.jar     # POM 내장 (testkit-core를 transitive로 끌어옴)
+> mvn install:install-file -Dfile=pjacoco-maven-plugin-1.4.1.jar       # POM 내장
+> ```
+> ≤1.4.0 릴리스 jar에는 testkit POM이 없어 stub POM으로 설치되며, 그 경우 `pjacoco-testkit`(core)를
+> 의존성에 **직접** 추가해야 합니다.
 >
 > 그러면 아래 좌표가 `mavenLocal()` 에서 resolve됩니다. 자세한 절차·검증은
 > [`docs/PUBLISHING.md`](docs/PUBLISHING.md), 공개 배포 로드맵은
@@ -103,15 +114,15 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 **Gradle** (`build.gradle.kts`):
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.3.0" }
+plugins { id("io.pjacoco.gradle") version "1.4.1" }
 
 pjacoco {
     includes.set(listOf("com.example.*"))
     attachTo.set(listOf("integrationTest"))   // 이 테스트 태스크 JVM에 에이전트 + control-url 자동 주입
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.3.0")
-    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.3.0")
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.4.1")
+    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.4.1")
 }
 ```
 
@@ -131,7 +142,7 @@ class OwnerBlackBoxIT {
 
 ```xml
 <plugin>
-  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.3.0</version>
+  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.4.1</version>
   <executions><execution><goals><goal>prepare-agent</goal></goals></execution></executions>
   <configuration><includes><include>com.example.*</include></includes></configuration>
 </plugin>
@@ -166,20 +177,20 @@ JUnit 5 익스텐션이 스위트 전체에 자동 적용됩니다(애너테이�
 > [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.3.0" }
+plugins { id("io.pjacoco.gradle") version "1.4.1" }
 
 pjacoco {
     attachTo.set(listOf("test"))          // 에이전트를 주입할 테스트 태스크 이름
     includes.set(listOf("com.example.*")) // 인-프로세스 경로는 control-url 불필요
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.3.0")   // JUnit 5 자동 적용
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.4.1")   // JUnit 5 자동 적용
     // JUnit 4는 에이전트만으로 동작 — 의존성·@Rule 불필요
 }
 ```
 
 **실행 / 결과 위치.** 에이전트를 붙인 테스트 태스크를 그대로 실행합니다(예: `./gradlew test`). 테스트별
-파일은 출력 디렉터리(Gradle 기본값 `build/pjacoco/`)에 테스트당 하나씩 `<FQN>#<method>.exec`(+ 짝이 되는
+파일은 출력 디렉터리(Gradle 기본값 `build/pjacoco/`, Maven 플러그인 기본값 `target/pjacoco/`)에 테스트당 하나씩 `<FQN>#<method>.exec`(+ 짝이 되는
 `.json` 사이드카)로 떨어지고, 전체 실행을 합친 `aggregate.exec` 하나가 함께 쓰입니다.
 
 **테스트킷을 직접 등록**하려면(자동 적용을 끈 경우 등) 익스텐션/룰을 명시합니다.
@@ -311,7 +322,7 @@ java -cp <pjacoco-agent.jar> io.pjacoco.agent.output.TraceMergeMain \
 
 ```bash
 # 특정 버전 받기 (버전은 Releases 페이지에서 확인)
-wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.3.0/pjacoco-agent-1.3.0.jar
+wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.4.1/pjacoco-agent-1.4.1.jar
 # 또는 gh CLI로 최신 릴리스에서 받기
 gh release download --repo baekchangjoon/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
 # 또는 직접 빌드 (JDK 17+ 필요; 산출물은 Java 8 호환)
@@ -338,9 +349,23 @@ curl -H 'baggage: test.id=T1' 'http://app/api/...'
 # 테스트 종료 → coverage/T1.exec + coverage/T1.json flush
 curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/stop?testId=T1&result=passed'
 
+# (v1.4.0+) binary stop: exec 바이트를 HTTP 응답 본문으로 직접 수신 (디스크 파일 없이 수집 가능)
+curl -XPOST -o T1.exec \
+  'http://127.0.0.1:6310/__coverage__/test/stop?testId=T1&format=binary&persist=false'
+# 응답: 200 + exec 바이트(빈 store면 204), X-Pjacoco-TestId/ClassCount/RecordedProbes/DroppedProbes/
+# Persisted 메타 헤더. persist 기본값은 true(응답으로 받고도 <testId>.exec를 디스크에 씀) —
+# 에이전트 옵션 persistOnStop=false 또는 쿼리 persist=false로 끕니다.
+
 # 3) 표준 jacoco 도구로 리포트
 java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html out/T1
 ```
+
+**제어 엔드포인트 계약(v1.4.1 정리):** 모든 엔드포인트는 **POST 전용**(그 외 405). 존재하지 않는
+testId의 stop은 text/binary 모두 **404**(≤1.4.0의 text 경로는 거짓 `200 "stopped"`를 반환했음 —
+하니스가 실패를 감지하도록 수정). 미지원 `format` 값은 **400**이며 진행 중 store를 소비하지 않습니다.
+엔드포인트는 **무인증**이므로 기본 loopback 바인딩을 유지하세요 — `address=`로 외부 인터페이스에
+바인딩하면 경고가 출력되며, 도달 가능한 누구든 수집을 시작/중단/flush할 수 있습니다(공유 CI 러너에서
+특히 주의).
 
 ### 에이전트 옵션
 
@@ -477,13 +502,17 @@ docs/                   # 설계 스펙 · 배포 가이드 · 리서치 보고�
 
 **인-프로세스 경로의 제약**:
 - 비동기·스레드풀로 넘긴 작업의 커버리지는 그 테스트로 귀속되지 않습니다 — **baggage 경로(`test.id` 헤더 / JUnit 자동 처리)를 사용할 때**. 트레이서(OTel/Brave)가 활성이고 `traceKeyAutoCreate=true`이면 단일 서비스 내 async 핸드오프는 귀속됩니다([트레이서 trace context 소비](#트레이서-trace-context-소비-비동기-per-test-커버리지) 참고).
-- **앱 배경 스레드(스케줄러·풀 등)가 계측 코드를 실행하면** context가 없어 드롭됩니다. 이때 (1) 동시 active 테스트가 **2개 이상이면 어느 테스트로도 표기하지 않고** 전역 `ambiguousDrops` 메트릭으로만 집계(병렬 오표기 방지), (2) 정확히 1개면 그 테스트에 귀속됩니다. 단일 active의 미세 노이즈 오표기는 `incompleteAttributionThreshold`로 억제하세요. **권장:** `includes`를 프로덕션 패키지로 좁히면(예 `com.foo.*`) 무관한 배경 스레드의 드롭 자체를 줄일 수 있고, 배경 스레드 커버리지가 테스트에 귀속돼야 한다면 트레이서 + `traceKeyAutoCreate=true`를 쓰세요.
+- **앱 배경 스레드(스케줄러·풀 등)가 계측 코드를 실행하면** context가 없어 드롭됩니다. 이때 (1) 동시 active 테스트가 **2개 이상이면 어느 테스트로도 표기하지 않고** 전역 `ambiguousDrops` 메트릭으로만 집계(병렬 오표기 방지), (2) 정확히 1개면 그 테스트의 `droppedProbes` **카운트로만** 귀속됩니다 — 커버리지가 그 테스트의 `.exec`에 들어가는 것이 아니며, "혼자 active였다"는 휴리스틱이므로 **무관한 배경 스레드(다른 테스트가 남긴 스레드 포함)의 드롭도 그 테스트에 집계될 수 있습니다**. 단일 active의 미세 노이즈 오표기는 `incompleteAttributionThreshold`로 억제하세요. **권장:** `includes`를 프로덕션 패키지로 좁히면(예 `com.foo.*`) 무관한 배경 스레드의 드롭 자체를 줄일 수 있고, 배경 스레드 커버리지가 테스트에 귀속돼야 한다면 트레이서 + `traceKeyAutoCreate=true`를 쓰세요.
 - `@Test(timeout)` / `@Rule Timeout` 은 별도 스레드(JUnit `FailOnTimeout`)에서 실행됩니다. **동작 변화
   (v1.2.0+):** 손실 가시화를 위해 이 실행분은 빈 store로 폐기되지 않고 **`incompleteAttribution`로 표기된
   `.exec`**(+사이드카)로 flush됩니다 — 이전엔 `.exec`가 아예 없었습니다. "timeout이면 `.exec` 없음"을
   가정하던 기존 스크립트/테스트는 확인하세요(귀속은 여전히 부분적이며 사이드카의 `incompleteAttribution`
   로 식별).
-- JUnit 5 파라미터화/반복 테스트는 한 testId 를 공유하므로, 마지막 실행분만 남습니다.
+- JUnit 5 파라미터화/반복 테스트는 **invocation마다 고유 testId**(`FQCN#method[1]`, `[2]`, …)로
+  분리되어 실행분별 `.exec`가 각각 남습니다(v1.4.1+). 이전(≤1.4.0)에는 한 testId를 공유해 순차
+  실행에서는 마지막 실행분만 남고, **병렬 실행에서는 동시 invocation이 서로의 진행 중 store를
+  덮어써 `.exec`가 아예 사라질 수 있었습니다**(BUG-2). 실행분을 합치려면 리포트 단계에서
+  `jacococli merge`를 쓰세요.
 - 한 테스트 태스크에서 인-프로세스와 서블릿 경로를 섞으면, 태스크를 분리하거나 `autoDetectExtensions`
   / `junit4Auto` 옵트아웃으로 한쪽을 끄세요.
 - JUnit 4 에이전트 자동 처리 경로의 테스트가 테스트 스레드에서 동기 인-프로세스 서블릿 호출을 하면,

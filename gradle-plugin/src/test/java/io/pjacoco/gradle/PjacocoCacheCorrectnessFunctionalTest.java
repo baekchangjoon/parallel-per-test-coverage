@@ -62,7 +62,12 @@ class PjacocoCacheCorrectnessFunctionalTest {
         return GradleRunner.create()
                 .withProjectDir(consumer.toFile())
                 .withPluginClasspath()
-                .withArguments("test", "--stacktrace")
+                // --no-watch-fs: these tests delete outputs EXTERNALLY between daemon builds; with
+                // file-system watching on, the reused TestKit daemon's retained VFS can miss the
+                // deletion (macOS event race, seen as a flaky UP-TO-DATE in full-suite runs on
+                // 2026-07-27) and wrongly report :test UP-TO-DATE. Disabling watching makes every
+                // build rescan the filesystem, so the up-to-date decision under test is deterministic.
+                .withArguments("test", "--stacktrace", "--no-watch-fs")
                 .build();
     }
 

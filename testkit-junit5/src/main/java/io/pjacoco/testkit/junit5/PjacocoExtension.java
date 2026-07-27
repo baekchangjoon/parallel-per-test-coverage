@@ -36,7 +36,11 @@ public final class PjacocoExtension implements BeforeEachCallback, AfterEachCall
         Pjacoco.clearCurrentTestId();
     }
 
+    /** See {@link TestIds#from}: invocation-unique ids ({@code FQCN#method[N]} for template
+     *  invocations) prevent the BUG-2 parallel overwrite race on the HTTP path too — and since
+     *  {@code Pjacoco.stop} is best-effort (a 404 is swallowed), a collision here would lose the
+     *  per-test .exec completely silently. */
     private static String testId(ExtensionContext context) {
-        return context.getRequiredTestClass().getName() + "#" + context.getRequiredTestMethod().getName();
+        return TestIds.from(context);
     }
 }

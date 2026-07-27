@@ -191,7 +191,12 @@ class SpecAcceptanceE2E {
         assertJsonEquals(json, "schemaVersion", "1");
         assertJsonEquals(json, "precision", "\"line\"");
         assertJsonEquals(json, "commitSha", "\"e2e-deadbeef\"");   // from env PJACOCO_COMMIT
-        assertJsonEquals(json, "jacocoVersion", "\"0.8.12\"");
+        // Derived, not hardcoded: the agent reports the embedded jacoco-core's version (3-segment
+        // short form). This test module resolves the same jacoco version the agent embeds, so the
+        // assertion follows -PjacocoVersion (the canary matrix) instead of pinning 0.8.12.
+        String[] v = org.jacoco.core.JaCoCo.VERSION.split("\\.");
+        String shortVersion = v.length <= 3 ? org.jacoco.core.JaCoCo.VERSION : v[0] + "." + v[1] + "." + v[2];
+        assertJsonEquals(json, "jacocoVersion", "\"" + shortVersion + "\"");
         // header MUST NOT accumulate the per-test list (spec §5.2: avoids stop contention)
         assertFalse(json.contains("\"tests\""), "manifest header must not contain a tests array");
     }
@@ -202,7 +207,9 @@ class SpecAcceptanceE2E {
     @Test
     void strictMode_unregisteredTestId_producesNoExec() throws Exception {
         app("GHOST", "positive");                  // app() asserts the request returned "ok" (it ran)
-        control("/__coverage__/test/stop?testId=GHOST&result=passed");   // no-op under strict; would flush if lenient
+        // v1.4.1 contract: stopping a never-started testId is 404 on the text path too (it used to be
+        // a false 200) — the 404 itself now PROVES strict mode rejected GHOST at the registry.
+        controlExpecting(404, "/__coverage__/test/stop?testId=GHOST&result=passed");
         assertFalse(Files.exists(COVERAGE.resolve("GHOST.exec")), "strict mode must not record/flush an unregistered testId");
         assertFalse(Files.exists(COVERAGE.resolve("GHOST.json")), "no sidecar for an unregistered testId");
     }
@@ -254,14 +261,18 @@ class SpecAcceptanceE2E {
 
     /** POST to the control endpoint; assert 200 and return the response body. */
     private String control(String pathAndQuery) throws Exception {
+        return controlExpecting(200, pathAndQuery);
+    }
+
+    private String controlExpecting(int expectedCode, String pathAndQuery) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL("http://127.0.0.1:" + CONTROL_PORT + pathAndQuery).openConnection();
         c.setRequestMethod("POST");
         c.setDoOutput(true);
         OutputStream os = c.getOutputStream();
         os.write(new byte[0]);
         os.close();
-        assertEquals(200, c.getResponseCode(), "control call failed: " + pathAndQuery);
-        return readStream(c.getInputStream());
+        assertEquals(expectedCode, c.getResponseCode(), "control call failed: " + pathAndQuery);
+        return c.getResponseCode() < 400 ? readStream(c.getInputStream()) : "";
     }
 
     /** GET the app; assert 200 AND that the servlet actually ran (body "ok"), not just any 200. */
