@@ -19,7 +19,13 @@ public final class CoverageBridge {
     public static void bindMetrics(Metrics m) { metrics = m; }
     public static void bindAttributor(DropAttributor a) { attributor = a; }
 
-    /** Instrument time: authoritative probe count per class (VM/slash name). */
+    /** Instrument time: authoritative probe count per class (VM/slash name).
+     *  KNOWN LIMITATION: keyed by name only — when multiple classloaders load different versions
+     *  of the same class name (different probe counts), the last instrumented one wins and excess
+     *  probes from the other version are dropped by the {@code probeId < p.length} guard in
+     *  {@code TestStore.record}. Keying by classId would require widening the reflection surface
+     *  into jacoco's ClassInstrumenter internals; per-class exec data itself is already
+     *  classId-keyed, so the blast radius is bounded to the probe-count hint. */
     public static void setTotalProbeCount(String className, int count) {
         PROBE_COUNTS.put(className, count);
     }

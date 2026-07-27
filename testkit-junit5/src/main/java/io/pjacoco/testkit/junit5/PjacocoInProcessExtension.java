@@ -31,7 +31,8 @@ public final class PjacocoInProcessExtension implements BeforeEachCallback, Afte
         InProcessBridge.deactivate(testId(context), result);
     }
 
+    /** See {@link TestIds#from}: invocation-unique ids prevent the BUG-2 parallel overwrite race. */
     private static String testId(ExtensionContext context) {
-        return context.getRequiredTestClass().getName() + "#" + context.getRequiredTestMethod().getName();
+        return TestIds.from(context);
     }
 }

@@ -4,7 +4,7 @@
 allprojects {
     group = "io.pjacoco"   // NOT org.jacoco — that namespace belongs to the JaCoCo project
     // Overridable so the release workflow can stamp the published version: -PreleaseVersion=x.y.z
-    version = providers.gradleProperty("releaseVersion").getOrElse("1.4.0")
+    version = providers.gradleProperty("releaseVersion").getOrElse("1.4.1")
 
     // Library javadoc contains code examples with annotations (e.g. @ExtendWith) that doclint
     // misreads as tags; don't fail the publishable javadoc jars on lint.
@@ -58,6 +58,70 @@ allprojects {
                         developerConnection.set("scm:git:$repoUrl.git")
                     }
                 }
+            }
+        }
+        // Embed the publication POM + pom.properties into the testkit jars (META-INF/maven/...):
+        // the release-jar onboarding path is `mvn install:install-file -Dfile=<jar>`, and without
+        // an embedded POM that generates a stub with NO dependency info — consumers adding only
+        // pjacoco-testkit-junit5 then hit NoClassDefFoundError for testkit-core classes
+        // (2026-07-27 dogfooding finding U3). verifyJarEmbedsPom (wired into check) asserts the
+        // entries exist, encoding the way the gap was found (inspecting the jar for META-INF/maven).
+        if (project.name.startsWith("testkit")) {
+            afterEvaluate {
+                val publication = extensions.getByType<PublishingExtension>()
+                        .publications.named("library").get() as MavenPublication
+                val gid = group.toString()
+                val aid = publication.artifactId
+                val ver = version.toString()
+                val mavenDir = "META-INF/maven/$gid/$aid"
+                val propsFile = layout.buildDirectory.file("embedPom/pom.properties")
+                val genProps = tasks.register("generatePomProperties") {
+                    // The coordinates MUST be an input: without it, re-building with a different
+                    // -PreleaseVersion left the task UP-TO-DATE and shipped a jar whose pom.xml and
+                    // pom.properties disagreed on the version — exactly the install-file GAV
+                    // corruption this block exists to prevent.
+                    inputs.property("coordinates", "$gid:$aid:$ver")
+                    outputs.file(propsFile)
+                    doLast {
+                        propsFile.get().asFile.writeText(
+                                "groupId=$gid\nartifactId=$aid\nversion=$ver\n")
+                    }
+                }
+                tasks.named<Jar>("jar") {
+                    into(mavenDir) {
+                        from(tasks.named("generatePomFileForLibraryPublication")) { rename { "pom.xml" } }
+                        from(genProps)
+                    }
+                }
+                // Configuration-time provider (not tasks...get() inside doLast, which captures the
+                // Project and breaks the configuration cache).
+                val jarArchive = tasks.named<Jar>("jar").flatMap { it.archiveFile }
+                val verifyJarEmbedsPom = tasks.register("verifyJarEmbedsPom") {
+                    inputs.file(jarArchive)
+                    doLast {
+                        java.util.zip.ZipFile(jarArchive.get().asFile).use { zip ->
+                            val pomEntry = zip.getEntry("$mavenDir/pom.xml")
+                            require(pomEntry != null) {
+                                "$aid jar must embed $mavenDir/pom.xml (install-file GAV + dependencies)"
+                            }
+                            require(zip.getEntry("$mavenDir/pom.properties") != null) {
+                                "$aid jar must embed $mavenDir/pom.properties"
+                            }
+                            // The two embedded files must agree with the built version — catches a
+                            // stale pom.properties surviving a version change.
+                            val pomXml = zip.getInputStream(pomEntry).bufferedReader().readText()
+                            require(pomXml.contains("<version>$ver</version>")) {
+                                "$aid embedded pom.xml version must be $ver"
+                            }
+                            val props = zip.getInputStream(zip.getEntry("$mavenDir/pom.properties"))
+                                    .bufferedReader().readText()
+                            require(props.contains("version=$ver")) {
+                                "$aid embedded pom.properties version must be $ver"
+                            }
+                        }
+                    }
+                }
+                tasks.named("check") { dependsOn(verifyJarEmbedsPom) }
             }
         }
         extensions.configure<org.gradle.plugins.signing.SigningExtension> {

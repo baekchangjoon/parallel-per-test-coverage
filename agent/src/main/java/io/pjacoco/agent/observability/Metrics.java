@@ -21,6 +21,11 @@ public final class Metrics {
     /** Incremented when an inbound HTTP request reaches the instrumented server with no resolvable
      *  test.id (no tracer scope, no baggage) and no active CoverageContext, during a collection window. */
     public final AtomicLong missingTestIdInbound = new AtomicLong();
+    /** Incremented when jacoco's Instrumenter throws for a class: that class silently gets NO
+     *  coverage (all-or-nothing). This exact failure mode cost −22.7% total instructions in a real
+     *  app (ASM version clash, 2026-06-21 feedback) and was only found by diffing against vanilla —
+     *  the counter turns it into a first-class signal. */
+    public final AtomicLong instrumentFailures = new AtomicLong();
     /** Incremented every time a probe fires on a thread with no active CoverageContext (coverage dropped). */
     public final AtomicLong droppedNoContext = new AtomicLong();
     /** Subset of droppedNoContext where no in-process test store was active → not attributable to any test. */
@@ -31,7 +36,9 @@ public final class Metrics {
     public final AtomicLong ambiguousDrops = new AtomicLong();
 
     public String summary() {
-        return "[pjacoco] summary: completed=" + testsCompleted.get()
+        // No "[pjacoco]" here — AgentLog.info prepends it (embedding it too printed the doubled
+        // "[pjacoco] [pjacoco] summary:" prefix, BUG-8).
+        return "summary: completed=" + testsCompleted.get()
                 + " partial=" + partialDumps.get()
                 + " swallowed=" + swallowedExceptions.get()
                 + " rejected=" + rejectedUnregistered.get()
@@ -40,6 +47,7 @@ public final class Metrics {
                 + " fallbackActivations=" + fallbackActivations.get()
                 + " unmapped=" + unmappedTraceIds.get()
                 + " evictedInFlight=" + evictedInFlightTraces.get()
+                + " instrumentFailures=" + instrumentFailures.get()
                 + " missingTestIdInbound=" + missingTestIdInbound.get()
                 + " droppedNoContext=" + droppedNoContext.get()
                 + " unattributedDrops=" + unattributedDrops.get()

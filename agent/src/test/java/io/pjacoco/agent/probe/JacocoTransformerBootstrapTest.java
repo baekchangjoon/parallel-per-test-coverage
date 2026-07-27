@@ -23,7 +23,8 @@ class JacocoTransformerBootstrapTest {
 
     private static JacocoTransformer transformer(String opts) {
         Instrumenter instrumenter = new Instrumenter(new LoggerRuntime());
-        return new JacocoTransformer(instrumenter, AgentOptions.parse(opts));
+        return new JacocoTransformer(instrumenter, AgentOptions.parse(opts),
+                new io.pjacoco.agent.observability.Metrics(), new io.pjacoco.agent.observability.AgentLog());
     }
 
     /** Real, instrumentable class bytes (major >= 49) shipped in the agent's main classes. */

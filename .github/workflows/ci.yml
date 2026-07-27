@@ -38,6 +38,8 @@ jobs:
           test
           :agent:integrationTest :agent:e2eTest :agent:e2eJakartaTest :agent:e2eCondyTest
           :agent:jacocoTestReport
+          :testkit-core:verifyJarEmbedsPom :testkit-junit5:verifyJarEmbedsPom
+          :testkit-junit4:verifyJarEmbedsPom :testkit-restassured:verifyJarEmbedsPom
           -PcondyRelease=${{ matrix.jdk }}
       - name: Upload reports
         if: always()

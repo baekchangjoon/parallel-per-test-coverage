@@ -93,7 +93,20 @@ Test harness                          Target app JVM  (-javaagent:pjacoco-agent.
 > **If building from source is inconvenient**, v1.3.0+ [GitHub Releases](../../releases/latest) attach the
 > **agent, the four testkit jars, and the maven-plugin jar** as assets — download them and `mvn
 > install:install-file` (or use a Gradle `flatDir`); the Gradle plugin id still resolves via the Plugin
-> Portal / mavenLocal. Full procedure: [`docs/PUBLISHING.md`](docs/PUBLISHING.md); public-release roadmap:
+> Portal / mavenLocal — it is **not** among the release assets.
+>
+> ```bash
+> # v1.4.1+ jars embed their POMs, so they install without GAV flags. Order: agent first (the plugin and testkits reference it).
+> mvn install:install-file -Dfile=pjacoco-agent-1.4.1.jar \
+>   -DgroupId=io.pjacoco -DartifactId=pjacoco-agent -Dversion=1.4.1 -Dpackaging=jar   # agent is a shaded jar, so pass the GAV
+> mvn install:install-file -Dfile=pjacoco-testkit-1.4.1.jar            # embedded POM
+> mvn install:install-file -Dfile=pjacoco-testkit-junit5-1.4.1.jar     # embedded POM (pulls testkit-core transitively)
+> mvn install:install-file -Dfile=pjacoco-maven-plugin-1.4.1.jar       # embedded POM
+> ```
+> ≤1.4.0 release jars carry no testkit POMs, so they install with stub POMs — in that case add
+> `pjacoco-testkit` (core) to your dependencies **manually**.
+>
+> Full procedure: [`docs/PUBLISHING.md`](docs/PUBLISHING.md); public-release roadmap:
 > [distribution & onboarding requirements](docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md)
 > (REQ-D03 tracks public publishing). This notice is removed once public release lands.
 
@@ -105,15 +118,15 @@ examples: [`samples/gradle-sample`](samples/gradle-sample) · [`samples/maven-sa
 **Gradle** (`build.gradle.kts`):
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.3.0" }
+plugins { id("io.pjacoco.gradle") version "1.4.1" }
 
 pjacoco {
     includes.set(listOf("com.example.*"))
     attachTo.set(listOf("integrationTest"))   // inject the agent + control-url into this test JVM
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.3.0")
-    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.3.0")
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.4.1")
+    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.4.1")
 }
 ```
 
@@ -133,7 +146,7 @@ class OwnerBlackBoxIT {
 
 ```xml
 <plugin>
-  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.3.0</version>
+  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.4.1</version>
   <executions><execution><goals><goal>prepare-agent</goal></goals></execution></executions>
   <configuration><includes><include>com.example.*</include></includes></configuration>
 </plugin>
@@ -168,20 +181,20 @@ below). JUnit 4 is handled by the agent, so it needs no `@Rule` either.
 > [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.3.0" }
+plugins { id("io.pjacoco.gradle") version "1.4.1" }
 
 pjacoco {
     attachTo.set(listOf("test"))          // the test task(s) to inject the agent into
     includes.set(listOf("com.example.*")) // the in-process path needs no control-url
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.3.0")   // JUnit 5 applied automatically
+    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.4.1")   // JUnit 5 applied automatically
     // JUnit 4 works from the agent alone — no dependency, no @Rule
 }
 ```
 
 **Run it / find the results.** Run the test task the agent is attached to (e.g. `./gradlew test`). The
-per-test files land in the output directory (Gradle default `build/pjacoco/`), one
+per-test files land in the output directory (Gradle default `build/pjacoco/`, Maven plugin default `target/pjacoco/`), one
 `<FQN>#<method>.exec` (plus a matching `.json` sidecar) per test, alongside a single whole-run
 `aggregate.exec`.
 
@@ -243,7 +256,7 @@ First get the jar — from [Releases](../../releases/latest), or build it:
 
 ```bash
 # Download a specific version (find the version on the Releases page)
-wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.3.0/pjacoco-agent-1.3.0.jar
+wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.4.1/pjacoco-agent-1.4.1.jar
 # Or grab the latest release with the gh CLI
 gh release download --repo baekchangjoon/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
 # Or build it (JDK 17+ to run Gradle; the artifact targets Java 8)
@@ -268,9 +281,24 @@ curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/start?testId=T1&shardId=s1'
 curl -H 'baggage: test.id=T1' 'http://app/api/...'          # propagate testId per request (OTel Baggage)
 curl -XPOST 'http://127.0.0.1:6310/__coverage__/test/stop?testId=T1&result=passed'
 
+# (v1.4.0+) binary stop: receive the exec bytes directly in the HTTP response body (no disk file needed)
+curl -XPOST -o T1.exec \
+  'http://127.0.0.1:6310/__coverage__/test/stop?testId=T1&format=binary&persist=false'
+# Response: 200 + exec bytes (204 for an empty store), with X-Pjacoco-TestId/ClassCount/RecordedProbes/
+# DroppedProbes/Persisted meta headers. persist defaults to true (the <testId>.exec is still written to
+# disk even when received in the response) — disable via the agent option persistOnStop=false or the
+# query persist=false.
+
 # 3) Report with standard jacoco tooling
 java -jar jacococli.jar report coverage/T1.exec --classfiles app/classes --html out/T1
 ```
+
+**Control-endpoint contract (tightened in v1.4.1):** every endpoint is **POST-only** (anything else is
+405). `stop` for an unknown testId is a **404** on both the text and binary paths (the ≤1.4.0 text path
+returned a false `200 "stopped"` — fixed so harnesses detect the failure). An unsupported `format` value
+is a **400** and does not consume the in-flight store. The endpoint is **unauthenticated**, so keep the
+default loopback binding — binding a non-loopback interface via `address=` logs a warning, and anyone who
+can reach it can start/stop/flush collection (be especially careful on shared CI runners).
 
 ### Agent options
 
@@ -389,12 +417,26 @@ whole-run aggregate file, failure isolation / memory cap / observability, jacoco
 
 **In-process path limitations**:
 - Coverage from work offloaded to async or thread-pool threads is not attributed to that test.
+- **When an app background thread (scheduler, pool, …) executes instrumented code**, there is no
+  context and the probes are dropped. In that case (1) with **two or more** concurrently active tests,
+  the drop is not attributed to any test and is only counted in the global `ambiguousDrops` metric
+  (prevents parallel mis-attribution); (2) with exactly one, it is attributed to that test's
+  `droppedProbes` **count only** — the coverage does not enter its `.exec` — and since this is a
+  "sole active test" heuristic, **drops from unrelated background threads (including threads leaked by
+  other tests) can be counted against it**. Suppress small-noise mis-attribution in the single-active
+  case with `incompleteAttributionThreshold`. **Recommended:** narrowing `includes` to your production
+  packages (e.g. `com.foo.*`) reduces the background-thread drops themselves; if background-thread
+  coverage must be attributed to the test, use a tracer + `traceKeyAutoCreate=true`.
 - `@Test(timeout)` / `@Rule Timeout` run on a separate thread (JUnit `FailOnTimeout`). **Behavior change
   (v1.2.0+):** for loss visibility, that run is no longer discarded as an empty store but **flushed as an
   `.exec` flagged `incompleteAttribution`** (+ sidecar) — previously there was no `.exec` at all. Scripts/tests
   that assumed "timeout ⇒ no `.exec`" should be revisited (attribution is still partial; identify it via the
   sidecar's `incompleteAttribution`).
-- JUnit 5 parameterized/repeated tests share one testId, so only the last invocation is kept.
+- JUnit 5 parameterized/repeated tests get a **unique testId per invocation** (`FQCN#method[1]`, `[2]`,
+  …), each with its own `.exec` (v1.4.1+). Previously (≤1.4.0) they shared one testId: sequential runs
+  kept only the last invocation, and **parallel runs could silently lose the `.exec` entirely** because
+  concurrent invocations overwrote each other's in-flight store (BUG-2). To combine invocations, use
+  `jacococli merge` at report time.
 - Mixing the in-process and servlet paths in one test task: split them into separate tasks, or turn one
   off with the `autoDetectExtensions` / `junit4Auto` opt-out.
 - If a JUnit 4 test under the agent-side zero-touch path makes a synchronous in-process servlet call on

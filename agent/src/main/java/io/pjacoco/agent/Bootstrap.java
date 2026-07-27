@@ -51,6 +51,10 @@ public final class Bootstrap {
 
     private static void install(String args, Instrumentation inst, AgentLog log) throws Exception {
         AgentOptions options = AgentOptions.parse(args);
+        // A typoed option silently sending output elsewhere is a diagnosis trap (BUG-4) — warn early.
+        for (String warning : options.parseWarnings()) {
+            log.warn("options", warning);
+        }
         Metrics metrics = new Metrics();
 
         String commitSha = options.commitSha() != null ? options.commitSha()
@@ -74,13 +78,7 @@ public final class Bootstrap {
         // Global meta header, written once at startup (persists commitSha, no per-stop contention).
         try {
             Files.createDirectories(outDir);
-            String header = new Json()
-                    .put("schemaVersion", 1)
-                    .put("jacocoVersion", "0.8.12")
-                    .put("commitSha", commitSha)        // null -> omitted
-                    .put("precision", "line")
-                    .toString();
-            Files.write(outDir.resolve("manifest.json"), header.getBytes("UTF-8"));
+            Files.write(outDir.resolve("manifest.json"), manifestHeader(commitSha).getBytes("UTF-8"));
         } catch (Exception e) {
             log.warn("manifest", "could not write manifest header: " + e);
         }
@@ -89,7 +87,7 @@ public final class Bootstrap {
         CoverageBridge.bindAttributor(new io.pjacoco.agent.probe.DropAttributor(registry, metrics));
 
         // Retain the global RuntimeData so the shutdown hook can dump the whole-run aggregate.
-        final RuntimeData runtimeData = ProbeInstrumentation.install(inst, options);
+        final RuntimeData runtimeData = ProbeInstrumentation.install(inst, options, metrics, log);
 
         // Best-effort control endpoint (the in-process path never calls it; a bind clash is harmless there).
         // REQ-U01: control=false skips it entirely (pure aggregate/in-process users avoid the bind cost and
@@ -98,7 +96,7 @@ public final class Bootstrap {
         if (options.control()) {
             try {
                 ControlEndpoint endpoint = new ControlEndpoint(registry, mapping, writer, options,
-                        options.controlHost(), options.controlPort());
+                        options.controlHost(), options.controlPort(), log);
                 int port = endpoint.start();
                 endpointRef[0] = endpoint;
                 System.setProperty("pjacoco.control-port", String.valueOf(port));
@@ -180,5 +178,24 @@ public final class Bootstrap {
 
         log.info("agent installed (output=" + options.outputDir()
                 + ", mode=" + (options.autoRegister() ? "auto-register" : "strict") + ")");
+    }
+
+    /** The startup manifest header. The jacoco version comes from the embedded (shaded) jacoco-core
+     *  itself — a hardcoded literal here claimed "0.8.12" even for builds embedding another version. */
+    static String manifestHeader(String commitSha) {
+        return new Json()
+                .put("schemaVersion", 1)
+                .put("jacocoVersion", shortJacocoVersion(org.jacoco.core.JaCoCo.VERSION))
+                .put("commitSha", commitSha)        // null -> omitted
+                .put("precision", "line")
+                .toString();
+    }
+
+    /** {@code JaCoCo.VERSION} is the fully-qualified build id ({@code 0.8.12.<timestamp>}); the
+     *  manifest documents a 3-segment version, so keep that shape for existing consumers. */
+    static String shortJacocoVersion(String fullVersion) {
+        String[] parts = fullVersion.split("\\.");
+        if (parts.length <= 3) return fullVersion;
+        return parts[0] + "." + parts[1] + "." + parts[2];
     }
 }

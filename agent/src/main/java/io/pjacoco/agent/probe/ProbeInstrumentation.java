@@ -54,7 +54,9 @@ public final class ProbeInstrumentation {
      *     local; now RETAINED so {@code Bootstrap} can dump the whole-run aggregate at shutdown
      *     (jacoco's always-populated base layer). Per-test routing is unaffected.
      */
-    public static RuntimeData install(Instrumentation inst, AgentOptions options) throws Exception {
+    public static RuntimeData install(Instrumentation inst, AgentOptions options,
+                                      io.pjacoco.agent.observability.Metrics metrics,
+                                      io.pjacoco.agent.observability.AgentLog log) throws Exception {
         installHookOnly(inst);
 
         // LoggerRuntime: in-process data channel for the instrumented classes' $jacocoInit. The global
@@ -68,7 +70,7 @@ public final class ProbeInstrumentation {
         // Force ProbeInserter to load + be advised now (clean context). If it first loads later inside
         // our own transform(), ByteBuddy skips advising it and per-test routing silently no-ops.
         warmUp(instrumenter);
-        inst.addTransformer(new JacocoTransformer(instrumenter, options), false);
+        inst.addTransformer(new JacocoTransformer(instrumenter, options, metrics, log), false);
         return data;
     }
 
@@ -97,6 +99,8 @@ public final class ProbeInstrumentation {
         private final WildcardMatcher includes;
         private final WildcardMatcher excludes;   // null => exclude nothing
         private final boolean inclBootstrap;      // false (default) => skip bootstrap/JDK classes
+        private final io.pjacoco.agent.observability.Metrics metrics;
+        private final io.pjacoco.agent.observability.AgentLog log;
 
         private static ClassLoader platformLoader() {
             try {
@@ -106,11 +110,15 @@ public final class ProbeInstrumentation {
             }
         }
 
-        JacocoTransformer(Instrumenter instrumenter, AgentOptions options) {
+        JacocoTransformer(Instrumenter instrumenter, AgentOptions options,
+                          io.pjacoco.agent.observability.Metrics metrics,
+                          io.pjacoco.agent.observability.AgentLog log) {
             this.instrumenter = instrumenter;
             this.includes = new WildcardMatcher(options.includes());        // default "*"
             this.excludes = options.excludes().isEmpty() ? null : new WildcardMatcher(options.excludes());
             this.inclBootstrap = options.inclBootstrapClasses();
+            this.metrics = metrics;
+            this.log = log;
         }
 
         @Override
@@ -141,7 +149,14 @@ public final class ProbeInstrumentation {
             try {
                 return instrumenter.instrument(buffer, vmName);
             } catch (Throwable t) {
-                return null;                                                 // coverage loss >> breaking the app
+                // Still never break class loading (coverage loss >> breaking the app) — but no longer
+                // silently: an uninstrumented class gets NO coverage at all, and this exact failure
+                // mode (an ASM version clash throwing NoSuchMethodError here) cost −22.7% total
+                // instructions in a real app before it was found by diffing against vanilla jacoco.
+                metrics.instrumentFailures.incrementAndGet();
+                log.warn("instrument", "failed to instrument " + dotted + " — the class gets NO"
+                        + " coverage (" + t + ")");
+                return null;
             }
         }
     }
