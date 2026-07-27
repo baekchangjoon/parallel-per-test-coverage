@@ -34,6 +34,30 @@
    - 산출 자산: `pjacoco-agent` + testkit 4종 + `pjacoco-maven-plugin` jar(+각 `.sha256`).
 4. 릴리스 노트에 **소비자 영향(BREAKING 등)**을 명시한다(자동 생성 노트만으로는 약함).
 
+## release-guard (수동 릴리스·태그 오지정 탐지)
+
+검증 로직은 `.github/scripts/release-guard.sh` 하나이고, 두 경로로 실행된다:
+
+- **정상 릴리스**: `release` 워크플로가 릴리스 생성 직후 같은 스크립트를 **자체 검증 단계**로
+  실행한다. (GITHUB_TOKEN으로 만든 태그·릴리스는 다른 워크플로의 이벤트 트리거를 발화시키지
+  않으므로, 아래 독립 워크플로만으로는 정상 경로가 커버되지 않는다.)
+- **수동 태그/릴리스**: `release-guard` 워크플로(`.github/workflows/release-guard.yml`)가
+  사람 자격증명(PAT)으로 만든 `v*` 태그 push·release 생성/수정에 반응한다 — 정확히 이
+  가드가 잡으려는 사례(v1.4.0 사고 유형). workflow_dispatch(tag 입력)로 수동 재검증도 가능.
+
+검증 내용:
+
+- 태그 커밋의 소스 버전 == 태그 버전: `build.gradle.kts`, `maven-plugin/pom.xml`의
+  `<version>`과 `<pjacoco.agent.version>`(1.2.0 사고 재발 방지). samples/README 리터럴은
+  릴리스 산출물이 아니므로 범위 외(위 체크리스트로 관리).
+- 릴리스 자산이 완전한지: agent + testkit 4종 + maven-plugin jar, 각 jar마다 `.sha256`,
+  고아 체크섬·정체불명 자산 없음. (deprecated alias `jacocoagent-parallel-*.jar`는 선택 —
+  있으면 `.sha256` 필수.)
+
+GitHub에는 릴리스 생성 자체를 **차단**하는 수단이 없으므로 이 가드는 **탐지 컨트롤**이다 —
+위반 시 Actions가 빨간 실패로 드러낸다. 태그 push 시점에는 릴리스가 아직 없을 수 있어 자산
+검사만 건너뛴다(release 이벤트/자체 검증 단계에서 재검사).
+
 ## 릴리스 노트 (소비자 영향 명시)
 
 `--generate-notes`(커밋 자동 요약)만으로는 **BREAKING/동작 변화**가 묻힌다. 다음에 해당하면 릴리스 노트
