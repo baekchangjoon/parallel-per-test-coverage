@@ -137,11 +137,11 @@ class PjacocoJUnit4InProcessFunctionalTest {
     private static String buildScript(Path repo, int port, boolean junit4Auto) {
         String version = ItSupport.itVersion();
         String junit4AutoLine = junit4Auto ? "" : "    junit4Auto.set(false)\n";
-        return "plugins { java; id(\"io.pjacoco.gradle\") }\n"
+        return "plugins { java; id(\"io.github.beltian.pjacoco\") }\n"
               + "repositories { mavenCentral(); flatDir { dirs(\"" + repo.toUri().getPath() + "\") } }\n"
               + "dependencies {\n"
-              + "    testImplementation(\"io.pjacoco:pjacoco-testkit-junit4:" + version + "\")\n"
-              + "    testImplementation(\"io.pjacoco:pjacoco-testkit-core:" + version + "\")\n"
+              + "    testImplementation(\"io.github.beltian.pjacoco:pjacoco-testkit-junit4:" + version + "\")\n"
+              + "    testImplementation(\"io.github.beltian.pjacoco:pjacoco-testkit-core:" + version + "\")\n"
               + "    testImplementation(\"junit:junit:4.13.2\")\n"
               + "    testRuntimeOnly(\"org.junit.vintage:junit-vintage-engine:5.10.3\")\n"
               + "    testRuntimeOnly(\"org.junit.platform:junit-platform-launcher\")\n"

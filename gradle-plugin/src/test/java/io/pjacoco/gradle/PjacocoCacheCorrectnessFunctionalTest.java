@@ -82,7 +82,7 @@ class PjacocoCacheCorrectnessFunctionalTest {
         write(consumer.resolve("build.gradle.kts"),
                 "plugins {\n"
               + "    java\n"
-              + "    id(\"io.pjacoco.gradle\")\n"
+              + "    id(\"io.github.beltian.pjacoco\")\n"
               + "}\n"
               + "repositories {\n"
               + "    mavenCentral()\n"

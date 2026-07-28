@@ -5,21 +5,41 @@
   <modelVersion>4.0.0</modelVersion>
 
   <!-- Built with Maven (not the Gradle multi-module build) because it produces a Maven plugin and
-       needs the maven-plugin-plugin descriptor generator. Resolves io.pjacoco:pjacoco-agent from the
+       needs the maven-plugin-plugin descriptor generator. Resolves io.github.beltian.pjacoco:pjacoco-agent from the
        repository (publish the agent with `./gradlew :agent:publishToMavenLocal` first). -->
-  <groupId>io.pjacoco</groupId>
+  <groupId>io.github.beltian.pjacoco</groupId>
   <artifactId>pjacoco-maven-plugin</artifactId>
-  <version>1.4.1</version>
+  <version>2.0.0</version>
   <packaging>maven-plugin</packaging>
 
   <name>pjacoco-maven-plugin</name>
   <description>Wires the pjacoco -javaagent for per-test coverage (mirrors jacoco:prepare-agent).</description>
+  <url>https://github.com/beltian/parallel-per-test-coverage</url>
+
+  <!-- Central-required metadata (mirrors the Gradle modules' shared POM config in build.gradle.kts). -->
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>beltian</id>
+      <name>Changjoon Baek</name>
+    </developer>
+  </developers>
+  <scm>
+    <url>https://github.com/beltian/parallel-per-test-coverage</url>
+    <connection>scm:git:https://github.com/beltian/parallel-per-test-coverage.git</connection>
+    <developerConnection>scm:git:https://github.com/beltian/parallel-per-test-coverage.git</developerConnection>
+  </scm>
 
   <properties>
     <maven.compiler.release>8</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.version>3.9.9</maven.version>
-    <pjacoco.agent.version>1.4.1</pjacoco.agent.version>
+    <pjacoco.agent.version>2.0.0</pjacoco.agent.version>
   </properties>
 
   <dependencies>
@@ -43,7 +63,7 @@
     </dependency>
     <!-- Bundled so the agent jar appears in the plugin's artifact map at runtime (like jacoco). -->
     <dependency>
-      <groupId>io.pjacoco</groupId>
+      <groupId>io.github.beltian.pjacoco</groupId>
       <artifactId>pjacoco-agent</artifactId>
       <version>${pjacoco.agent.version}</version>
       <scope>runtime</scope>
@@ -62,4 +82,73 @@
       </plugin>
     </plugins>
   </build>
+
+  <!-- Central publish (credentials-gated): activate with `mvn -Pcentral deploy`. Requires GPG in the
+       environment + a `central` server entry (Portal user token) in settings.xml — release.yml wires
+       both from GitHub secrets. Default builds are unaffected (profile off). -->
+  <profiles>
+    <profile>
+      <id>central</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals><goal>jar-no-fork</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.7.0</version>
+            <configuration>
+              <doclint>none</doclint>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals><goal>jar</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.4</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals><goal>sign</goal></goals>
+                <configuration>
+                  <!-- Non-interactive signing in CI (key imported beforehand with gpg import). -->
+                  <gpgArguments>
+                    <arg>--pinentry-mode</arg>
+                    <arg>loopback</arg>
+                  </gpgArguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.5.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <!-- Manual "Publish" click in the Portal UI for the first releases (same policy as
+                   the Gradle bundle's USER_MANAGED publishingType). -->
+              <autoPublish>false</autoPublish>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

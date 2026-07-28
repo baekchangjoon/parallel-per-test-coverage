@@ -62,9 +62,15 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 
 ## 빠른 시작 (권장)
 
+> ⚠️ **v2.0.0 BREAKING — 좌표(groupId) 변경:** `io.pjacoco:*` → **`io.github.beltian.pjacoco:*`**,
+> Gradle 플러그인 id `io.pjacoco.gradle` → **`io.github.beltian.pjacoco`**. Maven Central의 네임스페이스
+> 검증 요건에 따른 변경입니다. **≤1.4.1 아티팩트는 구좌표(`io.pjacoco`)** 그대로이며 GitHub Release
+> 자산/로컬 설치로만 소비됩니다. Java 패키지명(`io.pjacoco.*`), artifactId, 에이전트 옵션·시스템
+> 프로퍼티(`pjacoco.*`)는 **변경 없음** — 빌드 스크립트의 좌표·플러그인 id만 바꾸면 됩니다.
+
 > ⚠️ **먼저 읽으세요 — 현재는 로컬 설치가 필요합니다.** 아티팩트는 아직 Maven Central / Gradle Plugin
-> Portal 에 **공개 배포되지 않았습니다**(공개 배포는 예정된 후속 과제). 따라서 아래 `io.pjacoco:…` /
-> `id("io.pjacoco.gradle")` 좌표를 **그대로 복붙하면 resolve에 실패**합니다 — 버그가 아니라 미배포
+> Portal 에 **공개 배포되지 않았습니다**(공개 배포는 예정된 후속 과제). 따라서 아래 `io.github.beltian.pjacoco:…` /
+> `id("io.github.beltian.pjacoco")` 좌표를 **그대로 복붙하면 resolve에 실패**합니다 — 버그가 아니라 미배포
 > 상태입니다. 지금은 소스를 클론해 로컬에 설치한 뒤 쓰세요(한 번만):
 >
 > ```bash
@@ -92,11 +98,11 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 >
 > ```bash
 > # v1.4.1+ jar에는 POM이 내장돼 있어 GAV 지정 없이 설치됩니다. 순서: agent 먼저(플러그인·킷이 참조).
-> mvn install:install-file -Dfile=pjacoco-agent-1.4.1.jar \
->   -DgroupId=io.pjacoco -DartifactId=pjacoco-agent -Dversion=1.4.1 -Dpackaging=jar   # agent는 shaded jar라 GAV 지정
-> mvn install:install-file -Dfile=pjacoco-testkit-1.4.1.jar            # POM 내장
-> mvn install:install-file -Dfile=pjacoco-testkit-junit5-1.4.1.jar     # POM 내장 (testkit-core를 transitive로 끌어옴)
-> mvn install:install-file -Dfile=pjacoco-maven-plugin-1.4.1.jar       # POM 내장
+> mvn install:install-file -Dfile=pjacoco-agent-2.0.0.jar \
+>   -DgroupId=io.github.beltian.pjacoco -DartifactId=pjacoco-agent -Dversion=2.0.0 -Dpackaging=jar   # agent는 shaded jar라 GAV 지정
+> mvn install:install-file -Dfile=pjacoco-testkit-2.0.0.jar            # POM 내장
+> mvn install:install-file -Dfile=pjacoco-testkit-junit5-2.0.0.jar     # POM 내장 (testkit-core를 transitive로 끌어옴)
+> mvn install:install-file -Dfile=pjacoco-maven-plugin-2.0.0.jar       # POM 내장
 > ```
 > ≤1.4.0 릴리스 jar에는 testkit POM이 없어 stub POM으로 설치되며, 그 경우 `pjacoco-testkit`(core)를
 > 의존성에 **직접** 추가해야 합니다.
@@ -114,15 +120,15 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 **Gradle** (`build.gradle.kts`):
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.4.1" }
+plugins { id("io.github.beltian.pjacoco") version "2.0.0" }
 
 pjacoco {
     includes.set(listOf("com.example.*"))
     attachTo.set(listOf("integrationTest"))   // 이 테스트 태스크 JVM에 에이전트 + control-url 자동 주입
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.4.1")
-    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.4.1")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.0.0")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-restassured:2.0.0")
 }
 ```
 
@@ -136,13 +142,13 @@ class OwnerBlackBoxIT {
 
 > 별도 프로세스 서버라면 `attachTo`는 테스트 태스크에 두고(테스트킷이 control-url 을 받음), 서버 기동
 > 명령에는 노출된 `pjacoco.agentJvmArg` 프로퍼티를 한 줄 추가하면 됩니다. JUnit 4는
-> `io.pjacoco:pjacoco-testkit-junit4`의 `@Rule PjacocoRule`을 쓰세요.
+> `io.github.beltian.pjacoco:pjacoco-testkit-junit4`의 `@Rule PjacocoRule`을 쓰세요.
 
 **Maven** (`pom.xml`): `prepare-agent`가 `pjacoco.argLine`을 세팅하고 surefire가 이를 참조합니다.
 
 ```xml
 <plugin>
-  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.4.1</version>
+  <groupId>io.github.beltian.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>2.0.0</version>
   <executions><execution><goals><goal>prepare-agent</goal></goals></execution></executions>
   <configuration><includes><include>com.example.*</include></includes></configuration>
 </plugin>
@@ -152,8 +158,8 @@ class OwnerBlackBoxIT {
 </plugin>
 ```
 
-> 아티팩트 이름: 에이전트 `io.pjacoco:pjacoco-agent`, 테스트킷 `io.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
-> Gradle 플러그인 id `io.pjacoco.gradle`, Maven 플러그인 `io.pjacoco:pjacoco-maven-plugin`. 공개 배포(Maven
+> 아티팩트 이름: 에이전트 `io.github.beltian.pjacoco:pjacoco-agent`, 테스트킷 `io.github.beltian.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
+> Gradle 플러그인 id `io.github.beltian.pjacoco`, Maven 플러그인 `io.github.beltian.pjacoco:pjacoco-maven-plugin`. 공개 배포(Maven
 > Central / Gradle Plugin Portal)는 **아직 미완료**(예정된 후속 과제, REQ-D03) — 지금은 위 안내대로 로컬
 > 설치 후 쓰며, 절차는 [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
 
@@ -166,7 +172,7 @@ class OwnerBlackBoxIT {
 **전제 조건(이 경로):** 테스트 클래스패스에 JUnit 5(Jupiter) 또는 JUnit 4; 실행에 JDK 8+; 소스에서
 직접 빌드하려면 JDK 17+.
 
-**권장: 플러그인 + 테스트킷.** `io.pjacoco.gradle` 플러그인과 `pjacoco-testkit-junit5` 의존성을 추가하면,
+**권장: 플러그인 + 테스트킷.** `io.github.beltian.pjacoco` 플러그인과 `pjacoco-testkit-junit5` 의존성을 추가하면,
 JUnit 5 익스텐션이 스위트 전체에 자동 적용됩니다(애너테이션 불필요). Gradle 플러그인이 JUnit 5
 익스텐션 자동 등록(autodetection)을 켜 주므로 `@ExtendWith` 가 필요 없습니다 — Maven에서는
 `junit-platform.properties` 로 켜며, 아래 "Maven에서 JUnit 5 자동 등록" 에서 다룹니다. JUnit 4는
@@ -177,14 +183,14 @@ JUnit 5 익스텐션이 스위트 전체에 자동 적용됩니다(애너테이�
 > [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.4.1" }
+plugins { id("io.github.beltian.pjacoco") version "2.0.0" }
 
 pjacoco {
     attachTo.set(listOf("test"))          // 에이전트를 주입할 테스트 태스크 이름
     includes.set(listOf("com.example.*")) // 인-프로세스 경로는 control-url 불필요
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.4.1")   // JUnit 5 자동 적용
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.0.0")   // JUnit 5 자동 적용
     // JUnit 4는 에이전트만으로 동작 — 의존성·@Rule 불필요
 }
 ```
@@ -322,7 +328,7 @@ java -cp <pjacoco-agent.jar> io.pjacoco.agent.output.TraceMergeMain \
 
 ```bash
 # 특정 버전 받기 (버전은 Releases 페이지에서 확인)
-wget https://github.com/beltian/parallel-per-test-coverage/releases/download/v1.4.1/pjacoco-agent-1.4.1.jar
+wget https://github.com/beltian/parallel-per-test-coverage/releases/download/v2.0.0/pjacoco-agent-2.0.0.jar
 # 또는 gh CLI로 최신 릴리스에서 받기
 gh release download --repo beltian/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
 # 또는 직접 빌드 (JDK 17+ 필요; 산출물은 Java 8 호환)
@@ -330,10 +336,10 @@ JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar    # → agent/build/libs/pjacoco-
 ```
 
 > ⚠️ **v1.3.0 BREAKING — agent jar 이름 변경:** `jacocoagent-parallel*.jar` → **`pjacoco-agent*.jar`**(=
-> Maven artifactId `io.pjacoco:pjacoco-agent`). **파일명이 아니라 좌표 `io.pjacoco:pjacoco-agent`로
+> Maven artifactId `io.github.beltian.pjacoco:pjacoco-agent`). **파일명이 아니라 좌표 `io.github.beltian.pjacoco:pjacoco-agent`로
 > 의존하세요** — 이름으로 `find`/다운로드하는 스크립트는 깨집니다. v1.3.0~v1.4.x 릴리스는 구이름
-> `jacocoagent-parallel-<ver>.jar` 를 **deprecated alias 자산**으로 함께 첨부하니, 마이그레이션 기간 동안은
-> 둘 다 받을 수 있습니다(이후 제거).
+> `jacocoagent-parallel-<ver>.jar` 를 **deprecated alias 자산**으로 함께 첨부했습니다(v2.0.0에서 제거 완료 —
+> 좌표 `io.github.beltian.pjacoco:pjacoco-agent`로 의존하세요).
 
 대상 앱에 부착하고, 테스트 하니스에서 제어 엔드포인트를 호출합니다:
 
@@ -465,14 +471,14 @@ JAVA_HOME=<jdk17+> scripts/mutation-e2e.sh   # 뮤테이션 캠페인
 ## 프로젝트 구조 (Gradle 멀티모듈)
 
 ```
-agent/                  io.pjacoco:pjacoco-agent             # -javaagent (Bootstrap, ProbeInstrumentation,
+agent/                  io.github.beltian.pjacoco:pjacoco-agent             # -javaagent (Bootstrap, ProbeInstrumentation,
                                                              #   CoverageBridge, ControlEndpoint, inbound SPI …)
-testkit-core/           io.pjacoco:pjacoco-testkit           # 테스트킷 코어 (제어 API, 의존성 0, Java 8)
-testkit-junit5/         io.pjacoco:pjacoco-testkit-junit5    # PjacocoExtension
-testkit-junit4/         io.pjacoco:pjacoco-testkit-junit4    # PjacocoRule
-testkit-restassured/    io.pjacoco:pjacoco-testkit-restassured  # baggage 필터
-gradle-plugin/          id "io.pjacoco.gradle"               # 에이전트 resolve + -javaagent 와이어링
-maven-plugin/           io.pjacoco:pjacoco-maven-plugin      # prepare-agent (Maven 빌드)
+testkit-core/           io.github.beltian.pjacoco:pjacoco-testkit           # 테스트킷 코어 (제어 API, 의존성 0, Java 8)
+testkit-junit5/         io.github.beltian.pjacoco:pjacoco-testkit-junit5    # PjacocoExtension
+testkit-junit4/         io.github.beltian.pjacoco:pjacoco-testkit-junit4    # PjacocoRule
+testkit-restassured/    io.github.beltian.pjacoco:pjacoco-testkit-restassured  # baggage 필터
+gradle-plugin/          id "io.github.beltian.pjacoco"               # 에이전트 resolve + -javaagent 와이어링
+maven-plugin/           io.github.beltian.pjacoco:pjacoco-maven-plugin      # prepare-agent (Maven 빌드)
 samples/                gradle-sample · maven-sample         # 바로 돌려보는 엔드투엔드 예제
 spike/                  # M4 계측 메커니즘 검증 PoC (독립 빌드)
 scripts/mutation-e2e.sh # 뮤테이션 캠페인 하니스
@@ -534,7 +540,7 @@ TTL 축출, JMX, 백엔드 업로드.
 
 프로젝트 자체 코드는 [MIT](LICENSE) © 2026 baekchangjoon.
 
-> **배포 에이전트 jar 고지**: `-javaagent` jar(`io.pjacoco:pjacoco-agent`)에는 **JaCoCo core(EPL-2.0)** 와
+> **배포 에이전트 jar 고지**: `-javaagent` jar(`io.github.beltian.pjacoco:pjacoco-agent`)에는 **JaCoCo core(EPL-2.0)** 와
 > **Byte Buddy(Apache-2.0)** 가 `io.pjacoco.shaded.*` 로 relocate되어 임베드됩니다. 각 컴포넌트는 자신의
 > 라이선스로 유지되며(MIT로 재라이선스되지 않음), jar 내부에 원 고지(`about.html`·`META-INF/NOTICE` 등)가
 > 보존됩니다. 전체 내역은 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md) 참고. (Datadog `dd-trace-java`는

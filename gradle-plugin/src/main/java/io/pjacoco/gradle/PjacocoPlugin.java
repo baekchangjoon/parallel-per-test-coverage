@@ -11,13 +11,13 @@ import org.gradle.process.CommandLineArgumentProvider;
 import org.gradle.process.JavaForkOptions;
 
 /**
- * Gradle plugin {@code io.pjacoco.gradle}. Resolves the pjacoco agent and wires {@code -javaagent}
+ * Gradle plugin {@code io.github.beltian.pjacoco}. Resolves the pjacoco agent and wires {@code -javaagent}
  * for per-test coverage (convention + escape hatch — see the design spec §5.5):
  *
  * <ul>
  *   <li>creates the {@code pjacoco} extension ({@link PjacocoGradleExtension});</li>
  *   <li>creates a resolvable {@code pjacocoAgent} configuration and depends on
- *       {@code io.pjacoco:pjacoco-agent:<agentVersion>} (the shaded jar);</li>
+ *       {@code io.github.beltian.pjacoco:pjacoco-agent:<agentVersion>} (the shaded jar);</li>
  *   <li>populates {@code pjacoco.agentJvmArg} / {@code pjacoco.controlUrlArg} for manual wiring;</li>
  *   <li>for each task named in {@code attachTo}, lazily injects the agent AND
  *       {@code -Dpjacoco.control-url} into that JVM (so the testkit activates).</li>
@@ -70,7 +70,7 @@ public class PjacocoPlugin implements Plugin<Project> {
             c.setDescription("The pjacoco -javaagent jar.");
         });
         agentConf.getDependencies().addLater(ext.getAgentVersion().map(v ->
-                project.getDependencies().create("io.pjacoco:pjacoco-agent:" + v)));
+                project.getDependencies().create("io.github.beltian.pjacoco:pjacoco-agent:" + v)));
 
         // Lazy providers: resolution happens when .get() is called (task execution), not at config time.
         Provider<String> agentJarPath = project.provider(() -> agentConf.getSingleFile().getAbsolutePath());

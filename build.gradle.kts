@@ -2,9 +2,9 @@
 // gradle-plugin + maven-plugin + samples. Shared coordinates/version live here so every module
 // releases in lockstep under one SemVer.
 allprojects {
-    group = "io.pjacoco"   // NOT org.jacoco — that namespace belongs to the JaCoCo project
+    group = "io.github.beltian.pjacoco"   // NOT org.jacoco — that namespace belongs to the JaCoCo project
     // Overridable so the release workflow can stamp the published version: -PreleaseVersion=x.y.z
-    version = providers.gradleProperty("releaseVersion").getOrElse("1.4.1")
+    version = providers.gradleProperty("releaseVersion").getOrElse("2.0.0")
 
     // Library javadoc contains code examples with annotations (e.g. @ExtendWith) that doclint
     // misreads as tags; don't fail the publishable javadoc jars on lint.
@@ -28,15 +28,24 @@ allprojects {
     }
 
     // Shared publication metadata + (credentials-gated) signing for every module that publishes.
-    // Maven Central requires the POM metadata below + signatures. NOTE: the POM/signing here is
-    // wired, but the actual Central Portal upload step is NOT yet in release.yml — public publish is
-    // a deferred, credentials-gated follow-up (REQ-D03; see docs/PUBLISHING.md "Public release").
-    // Today release.yml publishes only the agent shaded jar to a GitHub Release; consume the other
-    // modules via publishToMavenLocal until then (README "빠른 시작").
+    // Maven Central requires the POM metadata below + signatures. The Central Portal upload is
+    // wired in release.yml (secrets-gated: staging publish -> centralBundle -> Portal API upload);
+    // see docs/PUBLISHING.md "Public release".
     pluginManager.withPlugin("maven-publish") {
         apply(plugin = "signing")
         val repoUrl = "https://github.com/beltian/parallel-per-test-coverage"
         extensions.configure<PublishingExtension> {
+            // Central Portal upload path: every module publishes into ONE root-level staging dir,
+            // which the root `centralBundle` task zips into the Portal Publisher API bundle format
+            // (repository-layout tree incl. .asc signatures + Gradle-generated checksums).
+            // Run from a clean checkout (release.yml always is) — a dirty staging dir would leak
+            // stale files into the bundle.
+            repositories {
+                maven {
+                    name = "centralStaging"
+                    url = uri(rootProject.layout.buildDirectory.dir("staging-deploy"))
+                }
+            }
             publications.withType<MavenPublication>().configureEach {
                 pom {
                     url.set(repoUrl)
@@ -134,4 +143,19 @@ allprojects {
             }
         }
     }
+}
+
+// Central Portal bundle: zip of the aggregated staging repository tree. Upload it (secrets-gated,
+// wired in release.yml) with:
+//   curl -f -X POST -H "Authorization: Bearer $(printf '%s:%s' "$USER" "$TOKEN" | base64)" \
+//     -F bundle=@build/central-bundle.zip \
+//     "https://central.sonatype.com/api/v1/publisher/upload?publishingType=USER_MANAGED"
+// USER_MANAGED = artifacts wait for a manual "Publish" click in the Portal UI (deliberate for the
+// first releases; switch to AUTOMATIC once the pipeline is trusted).
+tasks.register<Zip>("centralBundle") {
+    group = "publishing"
+    description = "Zips the staging-deploy tree into a Central Portal Publisher API bundle."
+    from(layout.buildDirectory.dir("staging-deploy"))
+    destinationDirectory.set(layout.buildDirectory)
+    archiveFileName.set("central-bundle.zip")
 }

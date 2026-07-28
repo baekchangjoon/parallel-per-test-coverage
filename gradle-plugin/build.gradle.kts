@@ -45,7 +45,7 @@ gradlePlugin {
     vcsUrl.set("https://github.com/beltian/parallel-per-test-coverage.git")
     plugins {
         create("pjacoco") {
-            id = "io.pjacoco.gradle"
+            id = "io.github.beltian.pjacoco"
             implementationClass = "io.pjacoco.gradle.PjacocoPlugin"
             displayName = "pjacoco per-test coverage"
             description = "Resolves the pjacoco agent and wires -javaagent for per-test coverage of parallel black-box suites."
