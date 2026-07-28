@@ -8,6 +8,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
   <img alt="Java" src="https://img.shields.io/badge/Java-8%2B-orange">
   <img alt="JaCoCo" src="https://img.shields.io/badge/JaCoCo-0.8.11%E2%80%930.8.13-brightgreen">
+  <a href="https://central.sonatype.com/artifact/io.github.beltian.pjacoco/pjacoco-agent"><img alt="Maven Central" src="https://img.shields.io/maven-central/v/io.github.beltian.pjacoco/pjacoco-agent"></a>
   <a href="README.md"><img alt="Docs" src="https://img.shields.io/badge/Docs-KO%20%7C%20EN-green"></a>
 </p>
 
@@ -72,30 +73,24 @@ Test harness                          Target app JVM  (-javaagent:pjacoco-agent.
 > agent options/system properties (`pjacoco.*`) are **unchanged** — only build-script coordinates and the
 > plugin id need updating.
 
-> ⚠️ **Read this first — local install is required for now.** The artifacts are **not published to
-> Maven Central / the Gradle Plugin Portal yet** (public release is a planned follow-up). So the
-> `io.github.beltian.pjacoco:…` / `id("io.github.beltian.pjacoco")` coordinates below **will fail to resolve if you copy them
-> verbatim** — that is the un-published state, not a bug. For now, clone the source and install locally
-> (once):
+> ✅ **Published on Maven Central (v2.0.0+):** the `io.github.beltian.pjacoco:*` coordinates (agent,
+> the four testkits, and the maven-plugin) resolve straight from Maven Central — **Maven users can
+> copy the examples below verbatim.** No extra repository configuration needed.
+>
+> ⏳ **Only the Gradle plugin awaits Plugin Portal approval:** new plugins go through a manual review
+> by Gradle engineers. Until it lands, `plugins { id("io.github.beltian.pjacoco") }` does not resolve
+> from the Portal, so Gradle users need a local install of just the plugin (the libraries still come
+> from Central):
 >
 > ```bash
-> # One step — install agent, testkit (×4), the Gradle plugin AND the Maven plugin to mavenLocal
-> ./scripts/install-local.sh
+> ./gradlew :gradle-plugin:publishToMavenLocal   # plugin only, once, after cloning the source
 > ```
+> plus `pluginManagement { repositories { mavenLocal(); gradlePluginPortal() } }` in the consumer's
+> `settings.gradle.kts` (see [`samples/gradle-sample`](samples/gradle-sample)). Alternative: skip the
+> plugin and attach Central's agent jar manually via `-javaagent`. **This notice is removed once the
+> plugin is approved.**
 >
-> (The script bundles Gradle `publishToMavenLocal` and Maven `install` so you can't end up half-installed
-> with a stale maven-plugin. To do it by hand:)
->
-> ```bash
-> ./gradlew :agent:publishToMavenLocal \
->   :testkit-core:publishToMavenLocal :testkit-junit5:publishToMavenLocal \
->   :testkit-junit4:publishToMavenLocal :testkit-restassured:publishToMavenLocal \
->   :gradle-plugin:publishToMavenLocal
-> mvn -f maven-plugin/pom.xml install
-> ```
->
-> Gradle consumers pick up the plugin from mavenLocal via `pluginManagement { repositories {
-> mavenLocal() } }` (see [`samples/gradle-sample`](samples/gradle-sample)).
+> (To install everything from source in one step: `./scripts/install-local.sh`.)
 >
 > **If building from source is inconvenient**, v1.3.0+ [GitHub Releases](../../releases/latest) attach the
 > **agent, the four testkit jars, and the maven-plugin jar** as assets — download them and `mvn
@@ -113,9 +108,7 @@ Test harness                          Target app JVM  (-javaagent:pjacoco-agent.
 > ≤1.4.0 release jars carry no testkit POMs, so they install with stub POMs — in that case add
 > `pjacoco-testkit` (core) to your dependencies **manually**.
 >
-> Full procedure: [`docs/PUBLISHING.md`](docs/PUBLISHING.md); public-release roadmap:
-> [distribution & onboarding requirements](docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md)
-> (REQ-D03 tracks public publishing). This notice is removed once public release lands.
+> Publishing procedure and validation: [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 Add the build **plugin + testkit**. The plugin resolves the agent and connects it via `-javaagent`; the
 testkit owns the per-test boundary (start/stop) and `baggage: test.id=...` propagation. Copy-and-run

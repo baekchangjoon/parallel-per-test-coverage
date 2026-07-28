@@ -8,6 +8,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
   <img alt="Java" src="https://img.shields.io/badge/Java-8%2B-orange">
   <img alt="JaCoCo" src="https://img.shields.io/badge/JaCoCo-0.8.11%E2%80%930.8.13-brightgreen">
+  <a href="https://central.sonatype.com/artifact/io.github.beltian.pjacoco/pjacoco-agent"><img alt="Maven Central" src="https://img.shields.io/maven-central/v/io.github.beltian.pjacoco/pjacoco-agent"></a>
   <a href="README.en.md"><img alt="Docs" src="https://img.shields.io/badge/Docs-KO%20%7C%20EN-green"></a>
 </p>
 
@@ -68,29 +69,22 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 > 자산/로컬 설치로만 소비됩니다. Java 패키지명(`io.pjacoco.*`), artifactId, 에이전트 옵션·시스템
 > 프로퍼티(`pjacoco.*`)는 **변경 없음** — 빌드 스크립트의 좌표·플러그인 id만 바꾸면 됩니다.
 
-> ⚠️ **먼저 읽으세요 — 현재는 로컬 설치가 필요합니다.** 아티팩트는 아직 Maven Central / Gradle Plugin
-> Portal 에 **공개 배포되지 않았습니다**(공개 배포는 예정된 후속 과제). 따라서 아래 `io.github.beltian.pjacoco:…` /
-> `id("io.github.beltian.pjacoco")` 좌표를 **그대로 복붙하면 resolve에 실패**합니다 — 버그가 아니라 미배포
-> 상태입니다. 지금은 소스를 클론해 로컬에 설치한 뒤 쓰세요(한 번만):
+> ✅ **Maven Central 공개 완료 (v2.0.0+):** `io.github.beltian.pjacoco:*` 좌표(agent·testkit 4종·
+> maven-plugin)는 Maven Central에서 바로 resolve됩니다 — **Maven 사용자는 아래 예시를 그대로 복사해
+> 쓰면 됩니다.** 별도 저장소 설정 불필요.
+>
+> ⏳ **Gradle 플러그인만 Plugin Portal 승인 대기 중:** 신규 플러그인은 Gradle 엔지니어의 수동 승인을
+> 거칩니다. 승인 전까지 `plugins { id("io.github.beltian.pjacoco") }`는 Portal에서 resolve되지 않으므로,
+> Gradle 사용자는 임시로 플러그인만 로컬 설치가 필요합니다(라이브러리는 Central에서 받아집니다):
 >
 > ```bash
-> # 한 번에 — agent·testkit(4종)·Gradle 플러그인·Maven 플러그인 모두 mavenLocal 에 설치
-> ./scripts/install-local.sh
+> ./gradlew :gradle-plugin:publishToMavenLocal   # 플러그인만 mavenLocal에 (소스 클론 후 1회)
 > ```
+> + 소비 프로젝트 `settings.gradle.kts`에 `pluginManagement { repositories { mavenLocal(); gradlePluginPortal() } }`
+> (예: [`samples/gradle-sample`](samples/gradle-sample)). 대안: 플러그인 없이 Central의 agent jar를 수동
+> `-javaagent`로 부착해도 됩니다. **승인 완료 시 이 안내는 제거됩니다.**
 >
-> (스크립트는 Gradle `publishToMavenLocal` 과 Maven `install` 을 한 단계로 묶어, maven-plugin 만 옛
-> 버전으로 남는 절반-설치를 막습니다. 수동으로 하려면:)
->
-> ```bash
-> ./gradlew :agent:publishToMavenLocal \
->   :testkit-core:publishToMavenLocal :testkit-junit5:publishToMavenLocal \
->   :testkit-junit4:publishToMavenLocal :testkit-restassured:publishToMavenLocal \
->   :gradle-plugin:publishToMavenLocal
-> mvn -f maven-plugin/pom.xml install
-> ```
->
-> Gradle 소비자는 `settings.gradle.kts` 의 `pluginManagement { repositories { mavenLocal() } }` 로
-> 플러그인을 mavenLocal 에서 받습니다(예: [`samples/gradle-sample`](samples/gradle-sample)).
+> (소스 전체를 로컬 설치하려면 `./scripts/install-local.sh` — agent·testkit·플러그인 2종을 한 번에 설치)
 >
 > **소스 빌드가 어렵다면**, v1.3.0+ [GitHub Release](../../releases/latest)에 **agent·testkit(4종)·maven-plugin
 > jar이 자산으로 첨부**됩니다 — 받아서 `mvn install:install-file`로 로컬 설치하거나 Gradle `flatDir`로 직접
@@ -107,10 +101,7 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 > ≤1.4.0 릴리스 jar에는 testkit POM이 없어 stub POM으로 설치되며, 그 경우 `pjacoco-testkit`(core)를
 > 의존성에 **직접** 추가해야 합니다.
 >
-> 그러면 아래 좌표가 `mavenLocal()` 에서 resolve됩니다. 자세한 절차·검증은
-> [`docs/PUBLISHING.md`](docs/PUBLISHING.md), 공개 배포 로드맵은
-> [배포·온보딩 요구사항명세](docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md)
-> (REQ-D03 = 공개 배포 추적) 참고. 공개 배포가 완료되면 이 안내는 제거됩니다.
+> 배포 절차·검증은 [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
 
 빌드 **플러그인 + 테스트킷**을 추가하는 방법입니다. 플러그인이 에이전트를 자동으로 받아 `-javaagent`로
 연결하고, 테스트킷이 테스트별 경계(start/stop)와 `baggage: test.id=...` 전파를 담당합니다. 바로 복사해
@@ -178,9 +169,8 @@ JUnit 5 익스텐션이 스위트 전체에 자동 적용됩니다(애너테이�
 `junit-platform.properties` 로 켜며, 아래 "Maven에서 JUnit 5 자동 등록" 에서 다룹니다. JUnit 4는
 에이전트가 처리하므로 `@Rule` 도 필요 없습니다.
 
-> 아티팩트는 아직 Maven Central / Gradle Plugin Portal 에 공개 배포되지 않았습니다(공개 배포 예정).
-> 지금은 소스에서 빌드 후 `publishToMavenLocal` 로 로컬에 설치해 쓰세요 —
-> [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
+> 라이브러리·maven-plugin은 Maven Central에서 받아집니다. Gradle 플러그인만 Portal 승인 대기 중이라
+> 당분간 `:gradle-plugin:publishToMavenLocal` 로컬 설치가 필요합니다(위 "빠른 시작" 안내 참고).
 
 ```kotlin
 plugins { id("io.github.beltian.pjacoco") version "2.0.0" }

@@ -54,7 +54,12 @@ is part of the deferred public-publish work (REQ-D03).
 > 3. **Gradle plugin → Plugin Portal**: `:gradle-plugin:publishPlugins` (reads
 >    `GRADLE_PUBLISH_KEY`/`GRADLE_PUBLISH_SECRET` from the environment).
 >
-> **One-time setup before the first publish** (owner actions):
+> **Current status (2026-07-28):** Maven Central is **LIVE** — all six `io.github.beltian.pjacoco`
+> v2.0.0 artifacts are on repo1.maven.org and were verified end-to-end from a clean repository
+> (fresh `-Dmaven.repo.local`, parallel JUnit 5 consumer, per-test `.exec` produced). The Gradle
+> plugin is **pending first-time Plugin Portal approval** (manual review, email notification).
+>
+> **One-time setup — COMPLETED 2026-07-28** (kept for reference):
 > - Sign in to <https://central.sonatype.com> with the **beltian** GitHub account → the
 >   `io.github.beltian` namespace auto-verifies → generate a user token → GitHub secrets
 >   `MAVEN_CENTRAL_USERNAME`/`MAVEN_CENTRAL_PASSWORD`.
