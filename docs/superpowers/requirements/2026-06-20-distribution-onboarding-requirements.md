@@ -34,7 +34,7 @@ publish is a **credentials-gated follow-up**." 즉 공개 저장소 자동 배�
 - 우선순위: Must
 - 설명: 공개 배포 전이라도 사용자는 **소스 빌드 + 로컬 설치**만으로 전 모듈(agent·testkit·Gradle/Maven
   플러그인)을 소비할 수 있어야 하고, `README.md` "빠른 시작 (권장)"이 이 로컬 경로를 **공개 좌표 스니펫보다
-  먼저, 명확히** 안내해야 한다. 공개 좌표(`io.pjacoco:…`, `id("io.pjacoco.gradle")`) 스니펫은 그대로 두되,
+  먼저, 명확히** 안내해야 한다. 공개 좌표(`io.github.beltian.pjacoco:…`, `id("io.pjacoco.gradle")`) 스니펫은 그대로 두되,
   "아직 공개 배포되지 않음 → 지금은 로컬 설치 필요" 경고를 **스니펫 앞**에 노출해, 복붙 시 resolve 실패를
   버그로 오인하지 않게 한다.
 - 수용기준:
@@ -71,9 +71,9 @@ publish is a **credentials-gated follow-up**." 즉 공개 저장소 자동 배�
   **Gradle Plugin Portal**(`:gradle-plugin:publishPlugins`)에 올린다. 완료되면 사용자는 README의 공개 좌표
   스니펫을 **복붙만으로 resolve**할 수 있어야 한다(로컬 설치 불필요).
 - 수용기준(완료 시):
-  - Given 배포 secrets가 설정된 상태, When `release` 워크플로를 실행하면, Then **agent(`io.pjacoco:pjacoco-agent`
+  - Given 배포 secrets가 설정된 상태, When `release` 워크플로를 실행하면, Then **agent(`io.github.beltian.pjacoco:pjacoco-agent`
     shaded)** + testkit + Gradle plugin + maven plugin이 각 공개 저장소에 게시되고, 신규 소비자가
-    `id("io.pjacoco.gradle") version "<v>"` / `testImplementation("io.pjacoco:pjacoco-testkit-junit5:<v>")`를
+    `id("io.pjacoco.gradle") version "<v>"` / `testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:<v>")`를
     로컬 설치 없이 resolve한다.
   - Given secrets가 없는 fork/PR, When 워크플로가 돌면, Then 공개 배포 스텝은 **건너뛰고**(silent publish
     없음) agent jar GitHub Release 경로는 현행대로 동작한다.

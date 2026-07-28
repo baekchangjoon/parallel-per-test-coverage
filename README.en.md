@@ -65,9 +65,16 @@ Test harness                          Target app JVM  (-javaagent:pjacoco-agent.
 
 ## Quick start (recommended)
 
+> ⚠️ **v2.0.0 BREAKING — coordinates (groupId) changed:** `io.pjacoco:*` → **`io.github.beltian.pjacoco:*`**,
+> Gradle plugin id `io.pjacoco.gradle` → **`io.github.beltian.pjacoco`** (required by Maven Central's
+> namespace verification). **≤1.4.1 artifacts keep the old `io.pjacoco` coordinates** and are consumable
+> only via GitHub Release assets / local install. Java package names (`io.pjacoco.*`), artifactIds, and
+> agent options/system properties (`pjacoco.*`) are **unchanged** — only build-script coordinates and the
+> plugin id need updating.
+
 > ⚠️ **Read this first — local install is required for now.** The artifacts are **not published to
 > Maven Central / the Gradle Plugin Portal yet** (public release is a planned follow-up). So the
-> `io.pjacoco:…` / `id("io.pjacoco.gradle")` coordinates below **will fail to resolve if you copy them
+> `io.github.beltian.pjacoco:…` / `id("io.github.beltian.pjacoco")` coordinates below **will fail to resolve if you copy them
 > verbatim** — that is the un-published state, not a bug. For now, clone the source and install locally
 > (once):
 >
@@ -97,11 +104,11 @@ Test harness                          Target app JVM  (-javaagent:pjacoco-agent.
 >
 > ```bash
 > # v1.4.1+ jars embed their POMs, so they install without GAV flags. Order: agent first (the plugin and testkits reference it).
-> mvn install:install-file -Dfile=pjacoco-agent-1.4.1.jar \
->   -DgroupId=io.pjacoco -DartifactId=pjacoco-agent -Dversion=1.4.1 -Dpackaging=jar   # agent is a shaded jar, so pass the GAV
-> mvn install:install-file -Dfile=pjacoco-testkit-1.4.1.jar            # embedded POM
-> mvn install:install-file -Dfile=pjacoco-testkit-junit5-1.4.1.jar     # embedded POM (pulls testkit-core transitively)
-> mvn install:install-file -Dfile=pjacoco-maven-plugin-1.4.1.jar       # embedded POM
+> mvn install:install-file -Dfile=pjacoco-agent-2.0.0.jar \
+>   -DgroupId=io.github.beltian.pjacoco -DartifactId=pjacoco-agent -Dversion=2.0.0 -Dpackaging=jar   # agent is a shaded jar, so pass the GAV
+> mvn install:install-file -Dfile=pjacoco-testkit-2.0.0.jar            # embedded POM
+> mvn install:install-file -Dfile=pjacoco-testkit-junit5-2.0.0.jar     # embedded POM (pulls testkit-core transitively)
+> mvn install:install-file -Dfile=pjacoco-maven-plugin-2.0.0.jar       # embedded POM
 > ```
 > ≤1.4.0 release jars carry no testkit POMs, so they install with stub POMs — in that case add
 > `pjacoco-testkit` (core) to your dependencies **manually**.
@@ -118,15 +125,15 @@ examples: [`samples/gradle-sample`](samples/gradle-sample) · [`samples/maven-sa
 **Gradle** (`build.gradle.kts`):
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.4.1" }
+plugins { id("io.github.beltian.pjacoco") version "2.0.0" }
 
 pjacoco {
     includes.set(listOf("com.example.*"))
     attachTo.set(listOf("integrationTest"))   // inject the agent + control-url into this test JVM
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.4.1")
-    testImplementation("io.pjacoco:pjacoco-testkit-restassured:1.4.1")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.0.0")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-restassured:2.0.0")
 }
 ```
 
@@ -140,13 +147,13 @@ class OwnerBlackBoxIT {
 
 > For a separately-launched server, point `attachTo` at the test task (testkit side gets the
 > control-url) and wire the exposed `pjacoco.agentJvmArg` property onto the server launch. For JUnit 4
-> use `@Rule PjacocoRule` from `io.pjacoco:pjacoco-testkit-junit4`.
+> use `@Rule PjacocoRule` from `io.github.beltian.pjacoco:pjacoco-testkit-junit4`.
 
 **Maven** (`pom.xml`): `prepare-agent` sets `pjacoco.argLine`, which surefire references.
 
 ```xml
 <plugin>
-  <groupId>io.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>1.4.1</version>
+  <groupId>io.github.beltian.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>2.0.0</version>
   <executions><execution><goals><goal>prepare-agent</goal></goals></execution></executions>
   <configuration><includes><include>com.example.*</include></includes></configuration>
 </plugin>
@@ -156,8 +163,8 @@ class OwnerBlackBoxIT {
 </plugin>
 ```
 
-> Artifact names: agent `io.pjacoco:pjacoco-agent`, testkit `io.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
-> Gradle plugin id `io.pjacoco.gradle`, Maven plugin `io.pjacoco:pjacoco-maven-plugin`. Public release
+> Artifact names: agent `io.github.beltian.pjacoco:pjacoco-agent`, testkit `io.github.beltian.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
+> Gradle plugin id `io.github.beltian.pjacoco`, Maven plugin `io.github.beltian.pjacoco:pjacoco-maven-plugin`. Public release
 > (Maven Central / Gradle Plugin Portal) is **not done yet** (planned follow-up, REQ-D03) — for now use
 > the local install above; procedure in [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
@@ -170,7 +177,7 @@ needed; each test method's start and end are the flush boundary.
 **Prerequisites (this path):** JUnit 5 (Jupiter) or JUnit 4 on the test classpath; JDK 8+ to run;
 JDK 17+ to build from source.
 
-**Recommended: plugin + testkit.** Add the `io.pjacoco.gradle` plugin and the `pjacoco-testkit-junit5`
+**Recommended: plugin + testkit.** Add the `io.github.beltian.pjacoco` plugin and the `pjacoco-testkit-junit5`
 dependency, and the JUnit 5 extension applies across the whole suite automatically (no annotation).
 The Gradle plugin enables JUnit 5 extension autodetection for you, so no `@ExtendWith` is needed — on
 Maven you enable it via `junit-platform.properties` (covered under "JUnit 5 auto-registration on Maven"
@@ -181,14 +188,14 @@ below). JUnit 4 is handled by the agent, so it needs no `@Rule` either.
 > [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 ```kotlin
-plugins { id("io.pjacoco.gradle") version "1.4.1" }
+plugins { id("io.github.beltian.pjacoco") version "2.0.0" }
 
 pjacoco {
     attachTo.set(listOf("test"))          // the test task(s) to inject the agent into
     includes.set(listOf("com.example.*")) // the in-process path needs no control-url
 }
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:1.4.1")   // JUnit 5 applied automatically
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.0.0")   // JUnit 5 applied automatically
     // JUnit 4 works from the agent alone — no dependency, no @Rule
 }
 ```
@@ -256,7 +263,7 @@ First get the jar — from [Releases](../../releases/latest), or build it:
 
 ```bash
 # Download a specific version (find the version on the Releases page)
-wget https://github.com/beltian/parallel-per-test-coverage/releases/download/v1.4.1/pjacoco-agent-1.4.1.jar
+wget https://github.com/beltian/parallel-per-test-coverage/releases/download/v2.0.0/pjacoco-agent-2.0.0.jar
 # Or grab the latest release with the gh CLI
 gh release download --repo beltian/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
 # Or build it (JDK 17+ to run Gradle; the artifact targets Java 8)
@@ -264,7 +271,7 @@ JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar    # → agent/build/libs/pjacoco-
 ```
 
 > ⚠️ **v1.3.0 BREAKING — agent jar renamed:** `jacocoagent-parallel*.jar` → **`pjacoco-agent*.jar`** (= the
-> Maven artifactId `io.pjacoco:pjacoco-agent`). **Depend on the coordinate `io.pjacoco:pjacoco-agent`, not the
+> Maven artifactId `io.github.beltian.pjacoco:pjacoco-agent`). **Depend on the coordinate `io.github.beltian.pjacoco:pjacoco-agent`, not the
 > filename** — scripts that `find`/download by the old name will break. v1.3.0–v1.4.x releases also attach the
 > old name `jacocoagent-parallel-<ver>.jar` as a **deprecated alias asset** during the migration window (removed
 > afterwards).
@@ -394,14 +401,14 @@ JAVA_HOME=<jdk17+> scripts/mutation-e2e.sh   # mutation campaign
 ## Layout (Gradle multi-module)
 
 ```
-agent/                  io.pjacoco:pjacoco-agent             # -javaagent (Bootstrap, ProbeInstrumentation,
+agent/                  io.github.beltian.pjacoco:pjacoco-agent             # -javaagent (Bootstrap, ProbeInstrumentation,
                                                              #   CoverageBridge, ControlEndpoint, inbound SPI …)
-testkit-core/           io.pjacoco:pjacoco-testkit           # testkit core (control API, zero deps, Java 8)
-testkit-junit5/         io.pjacoco:pjacoco-testkit-junit5    # PjacocoExtension
-testkit-junit4/         io.pjacoco:pjacoco-testkit-junit4    # PjacocoRule
-testkit-restassured/    io.pjacoco:pjacoco-testkit-restassured  # baggage filter
-gradle-plugin/          id "io.pjacoco.gradle"               # resolve the agent + wire -javaagent
-maven-plugin/           io.pjacoco:pjacoco-maven-plugin      # prepare-agent (Maven builds)
+testkit-core/           io.github.beltian.pjacoco:pjacoco-testkit           # testkit core (control API, zero deps, Java 8)
+testkit-junit5/         io.github.beltian.pjacoco:pjacoco-testkit-junit5    # PjacocoExtension
+testkit-junit4/         io.github.beltian.pjacoco:pjacoco-testkit-junit4    # PjacocoRule
+testkit-restassured/    io.github.beltian.pjacoco:pjacoco-testkit-restassured  # baggage filter
+gradle-plugin/          id "io.github.beltian.pjacoco"               # resolve the agent + wire -javaagent
+maven-plugin/           io.github.beltian.pjacoco:pjacoco-maven-plugin      # prepare-agent (Maven builds)
 samples/                gradle-sample · maven-sample         # complete runnable end-to-end examples
 spike/                  # M4 instrumentation-mechanism validation PoC (standalone build)
 scripts/mutation-e2e.sh # mutation-campaign harness
@@ -466,7 +473,7 @@ time-based TTL eviction, JMX, backend upload.
 
 The project's own code is [MIT](LICENSE) © 2026 baekchangjoon.
 
-> **Distributed agent jar notice**: the `-javaagent` jar (`io.pjacoco:pjacoco-agent`) **embeds**
+> **Distributed agent jar notice**: the `-javaagent` jar (`io.github.beltian.pjacoco:pjacoco-agent`) **embeds**
 > **JaCoCo core (EPL-2.0)** and **Byte Buddy (Apache-2.0)**, relocated under `io.pjacoco.shaded.*`. Each
 > component stays under its own license (it is NOT relicensed as MIT) and its original notices
 > (`about.html`, `META-INF/NOTICE`, …) are preserved inside the jar. Full details in

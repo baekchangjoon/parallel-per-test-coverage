@@ -55,13 +55,13 @@ Convert the repo into a Gradle multi-module build. New module layout (existing a
 
 ```
 parallel-per-test-coverage/                 (root: version, publishing, release wiring)
-├─ agent/                 io.pjacoco:pjacoco-agent              (the -javaagent shadowJar; today's code)
-├─ testkit-core/          io.pjacoco:pjacoco-testkit            (deps: none; the Pjacoco control API)
-├─ testkit-junit5/        io.pjacoco:pjacoco-testkit-junit5     (PjacocoExtension)
-├─ testkit-junit4/        io.pjacoco:pjacoco-testkit-junit4     (PjacocoRule)
-├─ testkit-restassured/   io.pjacoco:pjacoco-testkit-restassured(baggage Filter)
+├─ agent/                 io.github.beltian.pjacoco:pjacoco-agent              (the -javaagent shadowJar; today's code)
+├─ testkit-core/          io.github.beltian.pjacoco:pjacoco-testkit            (deps: none; the Pjacoco control API)
+├─ testkit-junit5/        io.github.beltian.pjacoco:pjacoco-testkit-junit5     (PjacocoExtension)
+├─ testkit-junit4/        io.github.beltian.pjacoco:pjacoco-testkit-junit4     (PjacocoRule)
+├─ testkit-restassured/   io.github.beltian.pjacoco:pjacoco-testkit-restassured(baggage Filter)
 ├─ gradle-plugin/         id io.pjacoco.gradle (pjacoco-gradle-plugin)
-├─ maven-plugin/          io.pjacoco:pjacoco-maven-plugin       (goal: prepare-agent)
+├─ maven-plugin/          io.github.beltian.pjacoco:pjacoco-maven-plugin       (goal: prepare-agent)
 └─ samples/
    ├─ gradle-sample/      Gradle E2E consumer (TestKit + includedBuild)
    └─ maven-sample/       Maven E2E consumer (maven-invoker + mavenLocal)
@@ -75,10 +75,10 @@ E2E).
 
 | Maven artifactId (= Gradle module) | shadowJar `archiveFileName` | GitHub Release asset |
 |---|---|---|
-| `io.pjacoco:pjacoco-agent` | `jacocoagent-parallel.jar` (unchanged) | `jacocoagent-parallel-<version>.jar` (+ `.sha256`) |
+| `io.github.beltian.pjacoco:pjacoco-agent` | `jacocoagent-parallel.jar` (unchanged) | `jacocoagent-parallel-<version>.jar` (+ `.sha256`) |
 
 The artifactId is new (Maven coordinate for plugins/users to resolve); the `-javaagent` filename and
-the existing release asset name are unchanged. Plugins resolve `io.pjacoco:pjacoco-agent` and use the
+the existing release asset name are unchanged. Plugins resolve `io.github.beltian.pjacoco:pjacoco-agent` and use the
 resolved file path directly (filename-agnostic).
 
 **Migration note + step order (riskiest step — do first, gate on AC5):**
@@ -171,7 +171,7 @@ pjacoco {
 }
 ```
 
-- Resolves `io.pjacoco:pjacoco-agent:<agentVersion>` (the **shaded** jar — see §7) via a dedicated
+- Resolves `io.github.beltian.pjacoco:pjacoco-agent:<agentVersion>` (the **shaded** jar — see §7) via a dedicated
   `pjacocoAgent` configuration.
 - Composes `-javaagent:<resolved>=destfile=...,port=...,includes=...,excludes=...`. (Note: pjacoco's
   `destfile` is re-interpreted by the agent as an output **directory**, unlike standard jacoco's
@@ -232,7 +232,7 @@ pjacoco {
   `jacocoagent-parallel.jar` and the existing release artifacts.
 - **Agent publication = the shaded jar.** `pjacoco-agent` must publish the relocated `shadowJar`
   (with the `io.pjacoco.shaded.*` relocations) as its **primary** Maven artifact — NOT the default
-  unshaded `jar` — so consumers/plugins resolving `io.pjacoco:pjacoco-agent` get the self-contained
+  unshaded `jar` — so consumers/plugins resolving `io.github.beltian.pjacoco:pjacoco-agent` get the self-contained
   `-javaagent`. (Shadow's `component.shadow` / disabling the plain `jar` publication.)
 - Libraries: published via the **`com.vanniktech.maven.publish`** plugin (handles POM metadata —
   name, description, MIT, scm, developers — signing, and the **Sonatype Central Portal** upload API at

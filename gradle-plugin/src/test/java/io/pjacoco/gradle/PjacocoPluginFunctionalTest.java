@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * AC2 (in-JVM path): apply {@code io.pjacoco.gradle} to a real consumer build and prove the plugin
+ * AC2 (in-JVM path): apply {@code io.github.beltian.pjacoco} to a real consumer build and prove the plugin
  * resolves the agent, composes/injects {@code -javaagent} + {@code -Dpjacoco.control-url} into the
  * test JVM, and the agent produces a per-test {@code .exec} (+ sidecar) for an in-JVM black-box
  * scenario (embedded Jetty servlet in the test JVM). The freshly built shaded agent + testkit jars
@@ -38,14 +38,14 @@ class PjacocoPluginFunctionalTest {
         write(consumer.resolve("build.gradle.kts"),
                 "plugins {\n"
               + "    java\n"
-              + "    id(\"io.pjacoco.gradle\")\n"
+              + "    id(\"io.github.beltian.pjacoco\")\n"
               + "}\n"
               + "repositories {\n"
               + "    mavenCentral()\n"
               + "    flatDir { dirs(\"" + repo.toUri().getPath() + "\") }\n"
               + "}\n"
               + "dependencies {\n"
-              + "    testImplementation(\"io.pjacoco:pjacoco-testkit:" + version + "\")\n"
+              + "    testImplementation(\"io.github.beltian.pjacoco:pjacoco-testkit:" + version + "\")\n"
               + "    testImplementation(\"org.junit.jupiter:junit-jupiter:5.10.3\")\n"
               + "    testImplementation(\"org.eclipse.jetty:jetty-server:9.4.55.v20240627\")\n"
               + "    testImplementation(\"org.eclipse.jetty:jetty-servlet:9.4.55.v20240627\")\n"

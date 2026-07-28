@@ -1,6 +1,6 @@
 plugins {
     java
-    id("io.pjacoco.gradle") version "1.4.1"
+    id("io.github.beltian.pjacoco") version "2.0.0"
 }
 
 repositories {
@@ -8,11 +8,11 @@ repositories {
     mavenCentral()
 }
 
-val pjacocoVersion = "1.4.1"
+val pjacocoVersion = "2.0.0"
 dependencies {
-    testImplementation("io.pjacoco:pjacoco-testkit-junit5:$pjacocoVersion")
-    testImplementation("io.pjacoco:pjacoco-testkit-junit4:$pjacocoVersion")
-    testImplementation("io.pjacoco:pjacoco-testkit-restassured:$pjacocoVersion")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:$pjacocoVersion")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit4:$pjacocoVersion")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-restassured:$pjacocoVersion")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
     testImplementation("io.rest-assured:rest-assured:5.4.0")
     testImplementation("junit:junit:4.13.2")

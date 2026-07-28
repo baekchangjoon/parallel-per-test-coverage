@@ -20,7 +20,7 @@ import org.apache.maven.project.MavenProject;
 @Mojo(name = "prepare-agent", defaultPhase = LifecyclePhase.INITIALIZE, threadSafe = true)
 public class PrepareAgentMojo extends AbstractMojo {
 
-    static final String AGENT_ARTIFACT = "io.pjacoco:pjacoco-agent";
+    static final String AGENT_ARTIFACT = "io.github.beltian.pjacoco:pjacoco-agent";
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     MavenProject project;

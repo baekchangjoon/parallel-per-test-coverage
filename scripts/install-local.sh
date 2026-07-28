@@ -4,7 +4,7 @@
 #
 # Why one script: the Gradle modules install via `publishToMavenLocal` while the Maven plugin installs via
 # `mvn install`. Doing them separately makes it easy to install only half — e.g. agent/testkit/gradle-plugin
-# updated but the maven-plugin left at an old version, so `io.pjacoco:pjacoco-maven-plugin:<new>` fails to
+# updated but the maven-plugin left at an old version, so `io.github.beltian.pjacoco:pjacoco-maven-plugin:<new>` fails to
 # resolve (feedback P4-B). This script keeps them in lockstep.
 #
 # Usage: ./scripts/install-local.sh            # uses the version from build.gradle.kts
@@ -28,7 +28,7 @@ fi
   :testkit-junit4:publishToMavenLocal :testkit-restassured:publishToMavenLocal \
   :gradle-plugin:publishToMavenLocal
 
-# 2) Maven plugin (resolves io.pjacoco:pjacoco-agent from step 1). Pass the same version through so the
+# 2) Maven plugin (resolves io.github.beltian.pjacoco:pjacoco-agent from step 1). Pass the same version through so the
 #    plugin pins the agent version it was built against.
 MVN_AGENT_ARG=()
 if [ "${1:-}" != "" ]; then

@@ -19,7 +19,7 @@
 
 - [ ] `build.gradle.kts` — `version = ... getOrElse("X.Y.Z")` (정본)
 - [ ] `maven-plugin/pom.xml` — `<version>` + `<pjacoco.agent.version>`
-- [ ] `samples/gradle-sample/build.gradle.kts` — `id("io.pjacoco.gradle") version "X.Y.Z"` + `val pjacocoVersion`
+- [ ] `samples/gradle-sample/build.gradle.kts` — `id("io.github.beltian.pjacoco") version "X.Y.Z"` + `val pjacocoVersion`
 - [ ] `samples/maven-sample/pom.xml` — `<pjacoco.version>`
 - [ ] `README.md` / `README.en.md` — 플러그인/테스트킷 좌표 + 다운로드 예시(`pjacoco-agent-X.Y.Z.jar`)
 - [ ] (자동) `PjacocoPlugin.DEFAULT_AGENT_VERSION` — 편집 금지(생성 리소스가 처리)
@@ -74,9 +74,10 @@ guard 워크플로는 **스크립트를 default branch에서, 검증 대상 코�
 ## agent jar 이름 변경 + deprecated alias (v1.3.0~)
 
 - agent jar 산출물명 = `pjacoco-agent`(= Maven artifactId). v1.3.0에서 구명 `jacocoagent-parallel`에서
-  변경 — **이름이 아니라 좌표 `io.pjacoco:pjacoco-agent`로 의존**할 것.
-- `release.yml`은 마이그레이션 기간 동안 구이름 `jacocoagent-parallel-<ver>.jar`를 **deprecated alias 자산**
-  으로 함께 첨부한다(스테이징 jar 개수 가드 = 7). **v1.4.x 이후 이 alias 복사·개수 가드(7→6)를 제거**한다.
+  변경 — **이름이 아니라 좌표 `io.github.beltian.pjacoco:pjacoco-agent`로 의존**할 것.
+- `release.yml`은 v1.3.0~v1.4.x 동안 구이름 `jacocoagent-parallel-<ver>.jar`를 deprecated alias 자산으로
+  함께 첨부했다. **v2.0.0에서 예정대로 제거**(스테이징 jar 개수 가드 7→6 반영, release-guard는 alias를
+  이전부터 선택 자산으로 취급하므로 무변경).
 
 ## 참고
 

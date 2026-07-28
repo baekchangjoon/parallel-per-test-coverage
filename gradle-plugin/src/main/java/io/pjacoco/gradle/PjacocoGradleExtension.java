@@ -5,7 +5,7 @@ import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 
 /**
- * DSL for the {@code io.pjacoco.gradle} plugin:
+ * DSL for the {@code io.github.beltian.pjacoco} plugin:
  *
  * <pre>{@code
  * pjacoco {
@@ -23,7 +23,7 @@ import org.gradle.api.provider.Property;
  */
 public abstract class PjacocoGradleExtension {
 
-    /** Version of {@code io.pjacoco:pjacoco-agent} to resolve. */
+    /** Version of {@code io.github.beltian.pjacoco:pjacoco-agent} to resolve. */
     public abstract Property<String> getAgentVersion();
 
     /** Control-endpoint port (also where the agent binds). Default 6310. */

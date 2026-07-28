@@ -32,7 +32,7 @@ What it shows:
 ## `maven-sample` — Maven + JUnit 5
 
 ```bash
-# install the maven plugin once (it resolves io.pjacoco:pjacoco-agent from mavenLocal)
+# install the maven plugin once (it resolves io.github.beltian.pjacoco:pjacoco-agent from mavenLocal)
 mvn -f maven-plugin/pom.xml install
 mvn -f samples/maven-sample/pom.xml test
 ls samples/maven-sample/target/pjacoco/      # T1.exec (+ .json)

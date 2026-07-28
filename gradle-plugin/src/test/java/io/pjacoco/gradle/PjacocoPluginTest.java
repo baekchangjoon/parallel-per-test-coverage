@@ -12,7 +12,7 @@ class PjacocoPluginTest {
 
     private Project applied() {
         Project project = ProjectBuilder.builder().build();
-        project.getPlugins().apply("io.pjacoco.gradle");
+        project.getPlugins().apply("io.github.beltian.pjacoco");
         return project;
     }
 
