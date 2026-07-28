@@ -9,7 +9,7 @@ import java.net.URLEncoder;
 
 /**
  * Framework-neutral entry point for routing per-test coverage to the
- * <a href="https://github.com/baekchangjoon/parallel-per-test-coverage">parallel-per-test-coverage</a>
+ * <a href="https://github.com/beltian/parallel-per-test-coverage">parallel-per-test-coverage</a>
  * agent attached to the server under test. Zero third-party dependencies; Java 8 compatible.
  *
  * <p><strong>Opt-in:</strong> point it at the agent's control endpoint with the system property

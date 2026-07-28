@@ -3,8 +3,8 @@
 > 🇰🇷 **한국어** (현재 문서) · [English](README.en.md)
 
 <p align="center">
-  <a href="https://github.com/baekchangjoon/parallel-per-test-coverage/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/baekchangjoon/parallel-per-test-coverage/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/baekchangjoon/parallel-per-test-coverage/actions/workflows/jacoco-canary.yml"><img alt="JaCoCo version canary" src="https://github.com/baekchangjoon/parallel-per-test-coverage/actions/workflows/jacoco-canary.yml/badge.svg"></a>
+  <a href="https://github.com/beltian/parallel-per-test-coverage/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/beltian/parallel-per-test-coverage/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/beltian/parallel-per-test-coverage/actions/workflows/jacoco-canary.yml"><img alt="JaCoCo version canary" src="https://github.com/beltian/parallel-per-test-coverage/actions/workflows/jacoco-canary.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
   <img alt="Java" src="https://img.shields.io/badge/Java-8%2B-orange">
   <img alt="JaCoCo" src="https://img.shields.io/badge/JaCoCo-0.8.11%E2%80%930.8.13-brightgreen">
@@ -322,9 +322,9 @@ java -cp <pjacoco-agent.jar> io.pjacoco.agent.output.TraceMergeMain \
 
 ```bash
 # 특정 버전 받기 (버전은 Releases 페이지에서 확인)
-wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.4.1/pjacoco-agent-1.4.1.jar
+wget https://github.com/beltian/parallel-per-test-coverage/releases/download/v1.4.1/pjacoco-agent-1.4.1.jar
 # 또는 gh CLI로 최신 릴리스에서 받기
-gh release download --repo baekchangjoon/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
+gh release download --repo beltian/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
 # 또는 직접 빌드 (JDK 17+ 필요; 산출물은 Java 8 호환)
 JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar    # → agent/build/libs/pjacoco-agent.jar
 ```

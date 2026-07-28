@@ -3,8 +3,8 @@
 > 🇰🇷 [한국어](README.md) · 🇬🇧 **English** (this page)
 
 <p align="center">
-  <a href="https://github.com/baekchangjoon/parallel-per-test-coverage/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/baekchangjoon/parallel-per-test-coverage/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/baekchangjoon/parallel-per-test-coverage/actions/workflows/jacoco-canary.yml"><img alt="JaCoCo version canary" src="https://github.com/baekchangjoon/parallel-per-test-coverage/actions/workflows/jacoco-canary.yml/badge.svg"></a>
+  <a href="https://github.com/beltian/parallel-per-test-coverage/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/beltian/parallel-per-test-coverage/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/beltian/parallel-per-test-coverage/actions/workflows/jacoco-canary.yml"><img alt="JaCoCo version canary" src="https://github.com/beltian/parallel-per-test-coverage/actions/workflows/jacoco-canary.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
   <img alt="Java" src="https://img.shields.io/badge/Java-8%2B-orange">
   <img alt="JaCoCo" src="https://img.shields.io/badge/JaCoCo-0.8.11%E2%80%930.8.13-brightgreen">
@@ -256,9 +256,9 @@ First get the jar — from [Releases](../../releases/latest), or build it:
 
 ```bash
 # Download a specific version (find the version on the Releases page)
-wget https://github.com/baekchangjoon/parallel-per-test-coverage/releases/download/v1.4.1/pjacoco-agent-1.4.1.jar
+wget https://github.com/beltian/parallel-per-test-coverage/releases/download/v1.4.1/pjacoco-agent-1.4.1.jar
 # Or grab the latest release with the gh CLI
-gh release download --repo baekchangjoon/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
+gh release download --repo beltian/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
 # Or build it (JDK 17+ to run Gradle; the artifact targets Java 8)
 JAVA_HOME=<jdk17+> ./gradlew :agent:shadowJar    # → agent/build/libs/pjacoco-agent.jar
 ```
