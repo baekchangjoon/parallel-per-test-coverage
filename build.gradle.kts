@@ -35,7 +35,7 @@ allprojects {
     // modules via publishToMavenLocal until then (README "빠른 시작").
     pluginManager.withPlugin("maven-publish") {
         apply(plugin = "signing")
-        val repoUrl = "https://github.com/baekchangjoon/parallel-per-test-coverage"
+        val repoUrl = "https://github.com/beltian/parallel-per-test-coverage"
         extensions.configure<PublishingExtension> {
             publications.withType<MavenPublication>().configureEach {
                 pom {
@@ -48,7 +48,7 @@ allprojects {
                     }
                     developers {
                         developer {
-                            id.set("baekchangjoon")
+                            id.set("beltian")
                             name.set("Changjoon Baek")
                         }
                     }

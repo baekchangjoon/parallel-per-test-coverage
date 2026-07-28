@@ -41,8 +41,8 @@ dependencies {
 }
 
 gradlePlugin {
-    website.set("https://github.com/baekchangjoon/parallel-per-test-coverage")
-    vcsUrl.set("https://github.com/baekchangjoon/parallel-per-test-coverage.git")
+    website.set("https://github.com/beltian/parallel-per-test-coverage")
+    vcsUrl.set("https://github.com/beltian/parallel-per-test-coverage.git")
     plugins {
         create("pjacoco") {
             id = "io.pjacoco.gradle"
