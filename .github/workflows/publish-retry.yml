@@ -1,0 +1,117 @@
+name: publish-retry
+
+# Re-runs ONLY the external-registry publish steps for an EXISTING release tag — for when
+# release.yml succeeded through the GitHub Release but a downstream publish step failed
+# (first use: v2.0.0, where central-publishing-maven-plugin 0.5.0 choked on the Portal API
+# response after the library bundle had already uploaded). Safe to re-run: Central uploads
+# are USER_MANAGED (nothing goes live without a manual Publish click; duplicate pending
+# deployments can be dropped in the Portal UI), and the Plugin Portal rejects re-publishing
+# an existing version rather than overwriting it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to publish from (e.g. v2.0.0)"
+        required: true
+        type: string
+      maven_central:
+        description: "Publish the maven-plugin to Maven Central"
+        required: false
+        type: boolean
+        default: true
+      plugin_portal:
+        description: "Publish the Gradle plugin to the Plugin Portal"
+        required: false
+        type: boolean
+        default: true
+      pom_from_default_branch:
+        description: "Use the default branch's maven-plugin/pom.xml (publish-mechanics fixes) instead of the tag's — artifact version/code still come from the tag"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      # secrets are not readable in step `if:` expressions — surface presence as booleans here.
+      HAS_CENTRAL_CREDS: ${{ secrets.MAVEN_CENTRAL_USERNAME != '' && secrets.MAVEN_CENTRAL_PASSWORD != '' && secrets.SIGNING_KEY != '' && secrets.SIGNING_PASSWORD != '' }}
+      HAS_PORTAL_CREDS: ${{ secrets.GRADLE_PUBLISH_KEY != '' }}
+    steps:
+      - name: Resolve tag
+        id: ver
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([._+-][A-Za-z0-9._+-]*)?$ ]]; then
+            echo "::error::'$INPUT_TAG' is not a v<semver> tag."
+            exit 1
+          fi
+          echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${INPUT_TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.ver.outputs.tag }}
+          # fetch-depth 0 so the default branch is available for pom_from_default_branch below.
+          fetch-depth: 0
+
+      # Opt-in escape hatch: a tag can pin publish MECHANICS that later turn out broken (v2.0.0
+      # pinned central-publishing-maven-plugin 0.5.0, which cannot parse current Portal API
+      # responses). This swaps in ONLY maven-plugin/pom.xml from the default branch — the
+      # artifact's version and code still come from the tag checkout.
+      - name: Use default-branch maven-plugin pom (publish-mechanics fix)
+        if: ${{ inputs.pom_from_default_branch }}
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git checkout "origin/$DEFAULT_BRANCH" -- maven-plugin/pom.xml
+          echo "maven-plugin/pom.xml taken from origin/$DEFAULT_BRANCH"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Publish maven-plugin to Maven Central
+        if: ${{ inputs.maven_central && env.HAS_CENTRAL_CREDS == 'true' }}
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+        run: |
+          # The maven-plugin resolves io.github.beltian.pjacoco:pjacoco-agent from mavenLocal.
+          ./gradlew --no-daemon "-PreleaseVersion=$VERSION" :agent:publishToMavenLocal
+          printf '%s' "$SIGNING_KEY" | gpg --batch --import
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<'SETTINGS'
+          <settings>
+            <servers>
+              <server>
+                <id>central</id>
+                <username>${env.MAVEN_CENTRAL_USERNAME}</username>
+                <password>${env.MAVEN_CENTRAL_PASSWORD}</password>
+              </server>
+            </servers>
+          </settings>
+          SETTINGS
+          export MAVEN_GPG_PASSPHRASE="$SIGNING_PASSWORD"
+          mvn -B -ntp -f maven-plugin/pom.xml -Pcentral -DskipTests \
+            "-Dpjacoco.agent.version=$VERSION" deploy
+
+      - name: Publish Gradle plugin to the Plugin Portal
+        if: ${{ inputs.plugin_portal && env.HAS_PORTAL_CREDS == 'true' }}
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
+          GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
+        run: |
+          ./gradlew --no-daemon "-PreleaseVersion=$VERSION" :gradle-plugin:publishPlugins
