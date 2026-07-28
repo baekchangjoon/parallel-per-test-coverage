@@ -81,5 +81,6 @@ guard 워크플로는 **스크립트를 default branch에서, 검증 대상 코�
 
 ## 참고
 
-- 공개 저장소 자동 배포(Maven Central / Gradle Plugin Portal)는 아직 미배선 — `docs/PUBLISHING.md`,
+- 공개 저장소 자동 배포(Maven Central / Gradle Plugin Portal)는 **배선 완료·가동 중**(v2.0.0부터,
+  secrets-게이트) — Central은 v2.0.0 공개 완료, Gradle Plugin Portal은 최초 승인 대기. `docs/PUBLISHING.md`,
   REQ-D03(`docs/superpowers/requirements/2026-06-20-distribution-onboarding-requirements.md`) 참고.
