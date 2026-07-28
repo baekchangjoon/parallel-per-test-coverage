@@ -18,3 +18,7 @@ target/
 
 # CodeGraph local index (user tooling, not project state)
 .codegraph/
+
+# local session artifacts (agent runs at repo root) + Claude Code worktrees
+/coverage/
+.claude/
