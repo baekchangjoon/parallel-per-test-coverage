@@ -153,9 +153,9 @@
     생성, Then **SUT-A에만 있는 클래스와 SUT-B에만 있는 클래스가 모두** 병합 결과에
     존재한다(last-writer-wins 오병합 배제).
   - Given 테스트 종료(성공·실패·중단 모든 경로), When 잔존 점검, Then 이 테스트가 띄운
-    컨테이너·네트워크·프로세스가 0이다(고유 project name + trap teardown — 전역 누수 검증
-    게이트 준수).
-- 검증 레벨: E2E black-box (MM-E2E-3, Docker 게이트 — CI에서 실행, 로컬은 Docker 가용 시)
+    자식 JVM 프로세스가 0이다(PID 한정 finally teardown — 전역 누수 검증 게이트 준수).
+- 검증 레벨: E2E black-box (MM-E2E-3 — **자식 JVM 2개(A·B 인스턴스)로 구현, Docker 불요**;
+  plan 리뷰에서 역전파 정정: spike가 컨테이너 없이 동일 검증을 수행했음)
 
 ### REQ-MM-014 — 문서화 (헤더 규약 표 + HeaderStyle + async 전제)
 - 유형: Functional / 우선순위: Should
@@ -220,6 +220,5 @@ Coverage: 0/15 green (0%) — target 100% (대상: Must 12 + Should 3, 연기 �
 ## 커버리지 규칙
 
 - 분모 = Must 12건 + 미연기 Should 3건(REQ-MM-007·013·014) = **15건 전부**.
-- REQ-MM-013은 Docker 게이트 E2E — CI에서 실행되므로 분모 유지. 로컬 환경에서 Docker
-  불가 시 CI green을 정답으로 본다.
+- REQ-MM-013은 자식-JVM 2개 기반이라 게이트 없음 — 로컬·CI 모두 항상 실행, 분모 유지.
 - 폐기·연기 발생 시 이 문서의 매트릭스를 갱신하고 ID는 재사용하지 않는다.

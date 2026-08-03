@@ -140,9 +140,9 @@ CI 매트릭스에 JDK 11 레그가 있다. 따라서 MM E2E는 agent 소스셋 
   `baggage-test.id: T2` 각각 요청 → `T1.exec`/`T2.exec` + W3C `baggage` 무회귀 + **3-way 충돌
   요청 1건(`baggage`+`test.id`+`baggage-test.id` 동시, 서로 다른 값 → W3C 승리)** +
   `fallbackActivations` 파티션 불변식 단언.
-- **MM-E2E-3 (분산, 조건부)**: 하니스 `FIELD` 스타일 → SUT-A → (앱 전파: `b3` + `test.id`
-  헤더, S4 실측 확정) → SUT-B 2-hop에서 두 서비스 exec가 같은 testId로 수집·병합. Docker
-  게이트 — 가용 시에만.
+- **MM-E2E-3 (분산)**: 하니스 `FIELD` 스타일 → SUT-A → (앱 전파: `b3` + `test.id`
+  헤더, S4 실측 확정) → SUT-B 2-hop에서 두 서비스 exec가 같은 testId로 수집·병합.
+  **자식 JVM 2개로 구현(Docker 불요 — plan 리뷰 역전파)**, 항상 실행.
 - **MM-E2E-4 (§7 프록시 결함)**: (a) 단위 — `jdk.proxy*`/`com.sun.proxy.*` 클래스가 계측
   제외됨을 확인, (b) e2e — Boot 3 앱이 `includes=*` 기본값으로 **부팅 성공**(발견 방법 인코딩:
   spike에서는 부팅 실패했음).

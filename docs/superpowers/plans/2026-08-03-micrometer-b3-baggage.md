@@ -25,10 +25,10 @@
 
 **Files:**
 - Create: `agent/src/integrationTest/java/io/pjacoco/agent/it/MmBaggageHeadersE2E.java`
-- 참고(패턴 복사원): `agent/src/integrationTest/java/io/pjacoco/agent/it/SpecAcceptanceE2E.java` — 자식 JVM에 `-javaagent`(shaded jar) + Jetty/서블릿 SUT + 제어 엔드포인트 호출 하니스. `pjacoco.shadedJar`/포트/`control()`/`app()` 헬퍼 구조를 그대로 따른다.
+- 참고(패턴 복사원): `agent/src/integrationTest/java/io/pjacoco/agent/it/SpecAcceptanceE2E.java` — **인프로세스** Jetty SUT. `-javaagent`는 자식 JVM이 아니라 **`e2eTest` Gradle 태스크가 테스트 JVM 자체에 부착**한다(agent/build.gradle.kts의 e2eTest jvmArgs, 제어 포트 6310, `@Tag("e2e")` + includeTags 선택). 신규 클래스도 **`@Tag("e2e")`를 달아 같은 e2eTest 태스크·fixture(strict 모드, TargetService)를 공유**한다. `control()`/`app()` 헬퍼 구조를 그대로 따른다. (주의: "자식 JVM + pjacoco.shadedJar" 패턴은 `WildcardIncludesCrashE2E`(:agent:test) 계열로 이 태스크와 무관 — 혼동 금지.)
 
 **Interfaces:**
-- Consumes: 기존 `SpecAcceptanceE2E`의 하니스 패턴(자식 JVM 기동·`POST /test/start|stop`·앱 요청 헬퍼), shaded jar(`pjacoco.shadedJar` 시스템 프로퍼티)
+- Consumes: 기존 `SpecAcceptanceE2E`의 인프로세스 하니스 패턴(`e2eTest` 태스크의 -javaagent + 제어 포트 6310, `POST /test/start|stop`·앱 요청 헬퍼)
 - Produces: Task 2가 green으로 만들 E2E. 테스트 메서드명 = 요구사항명세 매트릭스의 것: `fieldHeaderProducesPerTestExec`, `legacyHeaderProducesPerTestExec`, `w3cBaggageUnchanged`, `conflictW3cWins`
 
 - [ ] **Step 1: E2E 작성** — SpecAcceptanceE2E의 기동/헬퍼 구조를 복사해 다음 4 테스트를 작성한다. SUT는 **strict 모드**(옵션 없음 = 기본), `traceKeyAutoCreate` 미설정, 트레이서 없음. 각 테스트: `POST /test/start?testId=<id>` → 헤더 붙여 앱 요청 → `POST /test/stop?testId=<id>` → `<id>.exec` 존재+내용 단언.
@@ -40,6 +40,7 @@ package io.pjacoco.agent.it;
 
 /** MM-E2E-2 (design §4.5): 인바운드 baggage 헤더 3종 — 필드 헤더 2종 신규 인식 + W3C 무회귀 +
  *  우선순위 충돌. SUT: strict 모드, 트레이서 없음(폴백 경로만). */
+@Tag("e2e")   // e2eTest 태스크 선택 조건 — SpecAcceptanceE2E와 같은 agent-부착 JVM/fixture 공유
 class MmBaggageHeadersE2E {   // 기동/종료/헬퍼는 SpecAcceptanceE2E와 동일 구조로 구성
 
     @Test @DisplayName("REQ-MM-001: test.id 필드 헤더로 per-test exec 산출")
@@ -87,7 +88,7 @@ class MmBaggageHeadersE2E {   // 기동/종료/헬퍼는 SpecAcceptanceE2E와 �
 ```
 `appWithHeader(name, value)`/`appWithHeaders(pairs)`는 SpecAcceptanceE2E의 `app()` 헬퍼를 헤더 파라미터화한 사본. `assertCovered`는 jacoco `ExecutionDataReader`(SpecAcceptanceE2E의 기존 검증 로직 재사용)로 TargetService probe true 개수>0 단언. `assertEmptyOrAbsent`는 파일 부재 또는 대상 클래스 probe 전부 false 단언.
 
-- [ ] **Step 2: red 확인** — `./gradlew --no-daemon :agent:integrationTest --tests '*MmBaggageHeadersE2E*'` → `fieldHeaderProducesPerTestExec`/`legacyHeaderProducesPerTestExec` FAIL(신규 헤더 미인식 → exec 없음), `w3cBaggageUnchanged` PASS(기존 동작), `conflictW3cWins` PASS(현재도 W3C만 읽으므로). **FAIL 2건이 정확히 신규 요구를 가리키는지 확인.**
+- [ ] **Step 2: red 확인** — `./gradlew --no-daemon :agent:e2eTest --tests '*MmBaggageHeadersE2E*'` → `fieldHeaderProducesPerTestExec`/`legacyHeaderProducesPerTestExec` FAIL(신규 헤더 미인식 → exec 없음), `w3cBaggageUnchanged` PASS(기존 동작), `conflictW3cWins` PASS(현재도 W3C만 읽으므로). **FAIL 2건이 정확히 신규 요구를 가리키는지 확인.** (integrationTest 태스크는 -javaagent 미부착이라 절대 사용 금지 — 전 테스트가 엉뚱한 이유로 실패한다.)
 
 - [ ] **Step 3: 매트릭스 갱신+커밋** — 요구사항명세 매트릭스에서 REQ-MM-001/002를 🟡 red로. `git add agent/src/integrationTest docs/ && git commit -m "test(mm): MM-E2E-2 baggage header vectors (red for field headers)"`
 
@@ -98,7 +99,7 @@ class MmBaggageHeadersE2E {   // 기동/종료/헬퍼는 SpecAcceptanceE2E와 �
 **REQ-IDs:** REQ-MM-001, REQ-MM-002, REQ-MM-003, REQ-MM-004, REQ-MM-005, REQ-MM-007
 
 **Files:**
-- Modify: `agent/src/main/java/io/pjacoco/agent/inbound/servlet/ServletAdvice.java:70-102` (폴백 블록)
+- Modify: `agent/src/main/java/io/pjacoco/agent/inbound/servlet/ServletAdvice.java:74-81` (**폴백 블록만** — 83-87의 store 생성부는 Task 3 몫, 88-102의 missing-id 경고 블록은 무변경)
 - Modify: `agent/src/main/java/io/pjacoco/agent/observability/Metrics.java` (카운터 3종 + summary)
 - Test: `agent/src/test/java/io/pjacoco/agent/inbound/servlet/BaggageHeadersTest.java` (신규)
 
@@ -106,7 +107,7 @@ class MmBaggageHeadersE2E {   // 기동/종료/헬퍼는 SpecAcceptanceE2E와 �
 - Consumes: `BaggageParser.testId(String)`(기존, W3C 전용 유지), `TestStoreRegistry.active(String)`(기존)
 - Produces: `ServletAdvice.fallbackTestId(Object request)` — package-private static, 테스트 시임. Metrics 신규 필드명: `testIdFromW3cBaggage`/`testIdFromFieldHeader`/`testIdFromLegacyFieldHeader`
 
-- [ ] **Step 1: 단위 테스트 작성 (red)** — `BaggageHeadersTest`: mock request(리플렉션 `getHeader` 갖춘 최소 스텁 클래스)로 다음을 단언:
+- [ ] **Step 1: 단위 테스트 작성 (red)** — `BaggageHeadersTest`: 기존 `ServletAdviceTest` 관례대로 Mockito mock(HttpServletRequest)으로 다음을 단언:
 
 ```java
 package io.pjacoco.agent.inbound.servlet;
@@ -114,15 +115,14 @@ package io.pjacoco.agent.inbound.servlet;
 
 /** REQ-MM-004/005/007 단위 계약. 스텁 request는 Map<String,String> 기반 getHeader(String) 제공. */
 class BaggageHeadersTest {
-    static final class StubRequest {                     // 리플렉션 대상: public getHeader(String)
-        final java.util.Map<String, String> headers;
-        StubRequest(java.util.Map<String, String> h) { this.headers = h; }
-        public String getHeader(String name) { return headers.get(name); }
-    }
+    // 기존 ServletAdviceTest 관례를 따라 Mockito mock(HttpServletRequest) + when(getHeader) 사용.
     private static String resolve(java.util.Map<String, String> headers) throws Exception {
+        javax.servlet.http.HttpServletRequest req = org.mockito.Mockito.mock(javax.servlet.http.HttpServletRequest.class);
+        for (java.util.Map.Entry<String, String> e : headers.entrySet())
+            org.mockito.Mockito.when(req.getHeader(e.getKey())).thenReturn(e.getValue());
         java.lang.reflect.Method m = ServletAdvice.class.getDeclaredMethod("fallbackTestId", Object.class);
         m.setAccessible(true);
-        return (String) m.invoke(null, new StubRequest(headers));
+        return (String) m.invoke(null, req);
     }
 
     @Test void priority3Way() throws Exception {          // REQ-MM-004
@@ -183,7 +183,23 @@ class BaggageHeadersTest {
         return t.isEmpty() ? null : t;                    // REQ-MM-005: 빈 값은 매치 아님
     }
 ```
-(Java 8이므로 `bump(람다)` 대신 직접 `Metrics m = metrics; if (m != null) m.testIdFromFieldHeader.incrementAndGet();` 3회 인라인 — 위 의사표기를 그대로 풀어 쓴다.) `activate()`는 `if (key == null)` 블록에서 `fallbackTestId(request)` 호출 + non-null이면 `fallbackActivations` 증가(불변식: 3종 공통) 후 **`reg.active(key)`가 아니라 아직 기존 `forCoverageKey`** — store 생성 규칙 변경은 Task 3에서 분리 적용(작은 diff 유지).
+Java 8이므로 `bump(...)` 의사표기는 각 분기에서 **서로 다른 필드**를 직접 증가시켜 푼다:
+w3c 분기 → `m.testIdFromW3cBaggage`, field 분기 → `m.testIdFromFieldHeader`, legacy 분기 →
+`m.testIdFromLegacyFieldHeader` (셋 다 `Metrics m = metrics; if (m != null) ...` 형태).
+`activate()`의 폴백 부분(74-81행) 교체 코드:
+
+```java
+            // If no tracer context is active, fall back to the baggage headers (REQ-007 + REQ-MM-004).
+            if (key == null) {
+                String local = fallbackTestId(request);
+                if (local != null) {
+                    key = local;
+                    Metrics m = metrics;
+                    if (m != null) m.fallbackActivations.incrementAndGet();  // REQ-019 불변식: 3종 공통
+                }
+            }
+```
+store 생성부(83-87행)는 이 task에서 **건드리지 않는다**(기존 `forCoverageKey` 유지) — Task 3에서 분리 적용(작은 diff 유지).
 
 - [ ] **Step 4: green 확인** — `./gradlew :agent:test --tests '*BaggageHeadersTest*'` 전부 PASS + Task 1 E2E 재실행 → 4/4 PASS.
 - [ ] **Step 5: 매트릭스 REQ-MM-001~005·007 🟢 갱신 + 커밋** — `feat(agent): recognize Brave/Micrometer baggage field headers (3-header fallback)`
@@ -312,21 +328,20 @@ class HeaderStyleCoreTest {
 - Consumes: Task 5의 `HeaderStyle`/`fieldHeaderName()`/`fieldHeaderValue()`
 - Produces: `enable(HeaderStyle)`, `baggageFilter(HeaderStyle)`; 기존 `enable()`/`baggageFilter()`는 W3C 위임 유지
 
-- [ ] **Step 1: 테스트 작성 (red)** — RestAssured `FilterableRequestSpecification` mock(Mockito, 모듈에 이미 있으면 사용; 없으면 testImplementation 추가)으로 필터 단독 실행:
+- [ ] **Step 1: 테스트 작성 (red)** — **기존 `PjacocoRestAssuredTest`의 loopback `HttpServer` 패턴을 재사용**(Mockito 의존 추가 금지 — 이 모듈에 없음): 127.0.0.1 임시 포트 HttpServer가 수신 헤더를 기록하고, RestAssured로 실제 요청을 보내 서버가 받은 헤더를 단언한다:
 
 ```java
-class HeaderStyleTest {
+class HeaderStyleTest {   // 픽스처: PjacocoRestAssuredTest와 동일 — HttpServer 기동, 수신 헤더 Map 캡처
     @AfterEach void clear() { Pjacoco.clearCurrentTestId(); }
-    // 헬퍼: 필터에 mock spec 통과시키고 기록된 header(name,value) 호출 캡처
-    @Test void fieldEmitsFieldHeaderOnly() { /* enable-없이 baggageFilter(FIELD) 직접:
-        setCurrentTestId("T1") → filter 실행 → verify header("test.id","T1"), never header eq "baggage" */ }
-    @Test void bothEmitsBoth() { /* baggageFilter(BOTH) → 둘 다 verify */ }
-    @Test void baggageFilterStyleOverload() { /* baggageFilter(W3C_BAGGAGE) == 기존 형식만 */ }
-    @Test void noArgEnableKeepsW3c() { /* REQ-MM-009: baggageFilter() no-arg가 W3C만 emit —
+    @Test void fieldEmitsFieldHeaderOnly() { /* setCurrentTestId("T1") →
+        given().filter(PjacocoRestAssured.baggageFilter(HeaderStyle.FIELD)).get(url) →
+        captured.get("Test.id")=="T1" && !captured.containsKey("Baggage") (HttpServer 헤더는 대소문자 정규화 주의 — 기존 테스트의 조회 방식 준용) */ }
+    @Test void bothEmitsBoth() { /* baggageFilter(HeaderStyle.BOTH) → 두 헤더 모두 수신 단언 */ }
+    @Test void baggageFilterStyleOverload() { /* baggageFilter(HeaderStyle.W3C_BAGGAGE) → baggage만 수신 */ }
+    @Test void noArgEnableKeepsW3c() { /* REQ-MM-009: baggageFilter() no-arg → baggage만 수신(기존 동일).
         기존 시그니처 보존은 컴파일 자체가 증명 */ }
 }
 ```
-(mock 세부는 구현자가 restassured Filter 계약대로: `filter(reqSpec, respSpec, ctx)` 호출 후 `verify(reqSpec).header(...)`. `ctx.next`는 null 반환 스텁.)
 - [ ] **Step 2: red → 구현 → green** —
 
 ```java
@@ -361,15 +376,16 @@ class HeaderStyleTest {
 **REQ-IDs:** REQ-MM-011
 
 **Files:**
-- Create: `e2e-mm-boot3/settings.gradle.kts`, `e2e-mm-boot3/build.gradle.kts`, `e2e-mm-boot3/app/` (spike 앱 `scratchpad/mm-spike/app` 소스·설정을 저장소로 승격 — Calc류 서비스 + /sync + /async + AsyncWorker + ContextPropagatingTaskDecorator 구성 + application.properties), `e2e-mm-boot3/src/test/java/io/pjacoco/e2emm/MmBoot3BootE2E.java`
+- Create: `e2e-mm-boot3/settings.gradle.kts`, `e2e-mm-boot3/build.gradle.kts`, `e2e-mm-boot3/src/test/java/io/pjacoco/e2emm/MmBoot3BootE2E.java`
+- 기존: `e2e-mm-boot3/app/` — **spike 앱 소스는 이미 저장소에 커밋돼 있음**(SpikeApplication/SpikeController/SyncWorker/AsyncWorker/DownstreamWorker + application.properties + pom.xml). Maven pom은 참고용 — Gradle 빌드로 이식하며 main sourceSet 경로를 `app/src/main`으로 지정하거나 소스를 이동한다.
 - 참고: `spike/build.gradle.kts`(toolchain 17 독립 빌드 선례), spike 결과 문서의 앱 구성
 
 **Interfaces:**
 - Consumes: agent shaded jar — 빌드 시 `../agent/build/libs/pjacoco-agent.jar` 경로를 시스템 프로퍼티 `pjacoco.agentJar`로 주입(빌드 스크립트에서 `../gradlew :agent:shadowJar` 산출물 참조; CI 잡이 선행 빌드)
 - Produces: Task 8·9가 같은 빌드/앱을 사용. 앱 endpoints: `GET /sync`(직선 코드 서비스 호출), `GET /async`(완료 대기 후 응답, AsyncWorker.work는 **분기 없는 직선 코드로 재작성** — REQ-MM-012의 결정론 단언 전제)
 
-- [ ] **Step 1: 독립 빌드 스캐폴드** — `settings.gradle.kts`(`rootProject.name = "e2e-mm-boot3"`), `build.gradle.kts`: java toolchain 17, Boot 3.3.x BOM + starter-web/actuator + micrometer-tracing-bridge-brave, `bootJar` + test(JUnit5). 루트 빌드에 포함하지 **않는다**(독립 — JDK 11 CI 레그 보호).
-- [ ] **Step 2: 앱 소스 승격** — spike 앱을 `e2e-mm-boot3/app-src`(main sourceSet)로 이식. `AsyncWorker.work(int)`를 분기 없는 직선 코드로 단순화(ternary·if 제거 — 커버 단언 결정론).
+- [ ] **Step 1: 독립 빌드 스캐폴드** — `settings.gradle.kts`(`rootProject.name = "e2e-mm-boot3"`), `build.gradle.kts`: java toolchain 17, Boot 3.3.x BOM + starter-web/actuator/**starter-aop**(spike pom과 동일 — @Async JDK 프록시 재현의 필수 의존) + micrometer-tracing-bridge-brave, `bootJar` + test(JUnit5). 루트 빌드에 포함하지 **않는다**(독립 — JDK 11 CI 레그 보호).
+- [ ] **Step 2: 앱 소스 정리** — 커밋된 `e2e-mm-boot3/app` 소스를 Gradle main sourceSet으로 연결. `AsyncWorker.work(int)`를 분기 없는 직선 코드로 단순화(ternary·if 제거 — 커버 단언 결정론). `SpikeController`의 `/call-downstream`이 **자기 자신(local.server.port)이 아니라 설정 가능한 대상**을 호출하도록 `downstream.base-url` 프로퍼티를 추가(기본=self — Task 9의 2-hop이 B 인스턴스 URL 주입).
 - [ ] **Step 3: MmBoot3BootE2E 작성** — 발견-방법 인코딩:
 
 ```java
@@ -386,7 +402,7 @@ void bootsWithDefaultIncludes() throws Exception {
     } finally { app.destroyForcibly(); app.waitFor(10, TimeUnit.SECONDS); }   // 모든 경로 teardown
 }
 ```
-- [ ] **Step 4: 실행 확인** — `(cd e2e-mm-boot3 && ../gradlew --no-daemon test)` → Task 4가 이미 머지된 브랜치이므로 PASS 기대. **Task 4 이전 커밋으로 되돌려 red였을 검증이 필요하면 `git stash`로 프록시 수정만 잠시 제거해 FAIL 확인 후 복원**(발견-방법 보존).
+- [ ] **Step 4: 실행 확인** — **선행: `./gradlew --no-daemon :agent:shadowJar`**(agent jar가 없으면 실패한다) 후 `(cd e2e-mm-boot3 && ../gradlew --no-daemon test)` → Task 4가 이미 머지된 브랜치이므로 PASS 기대. **Task 4 이전 커밋으로 되돌려 red였을 검증이 필요하면 `git stash`로 프록시 수정만 잠시 제거해 FAIL 확인 후 복원**(발견-방법 보존).
 - [ ] **Step 5: 매트릭스 REQ-MM-011 🟢 + 커밋** — `test(e2e): standalone Boot 3 build + boot-success E2E`
 
 ---
@@ -415,18 +431,35 @@ void bootsWithDefaultIncludes() throws Exception {
 
 **Files:**
 - Create: `e2e-mm-boot3/src/test/java/io/pjacoco/e2emm/MmDistributedFieldE2E.java`
-- Modify: `e2e-mm-boot3/build.gradle.kts` (필요시 testkit-core/restassured 의존 — mavenLocal 아닌 **project 산출물 jar 직접 참조**: `../testkit-core/build/libs`)
+- Modify: `e2e-mm-boot3/build.gradle.kts` — testkit jar를 **버전 리터럴 없이 glob으로** 참조(+ restassured는 testkit에서 compileOnly라 **직접 의존 선언 필수**):
+
+```kotlin
+dependencies {
+    // 형제 빌드 산출물 — 버전 무관 glob, sources/javadoc 제외. 경로는 projectDirectory 기준.
+    testImplementation(files(layout.projectDirectory.dir("../testkit-core/build/libs").asFileTree.matching {
+        include("testkit-core-*.jar"); exclude("*-sources.jar", "*-javadoc.jar") }))
+    testImplementation(files(layout.projectDirectory.dir("../testkit-restassured/build/libs").asFileTree.matching {
+        include("testkit-restassured-*.jar"); exclude("*-sources.jar", "*-javadoc.jar") }))
+    testImplementation("io.rest-assured:rest-assured:5.4.0")   // testkit-restassured의 compileOnly 의존을 직접 공급
+}
+```
+(선행 빌드: `./gradlew :testkit-core:jar :testkit-restassured:jar` — Step 실행 명령과 CI 잡에 포함.)
 
 **Interfaces:**
 - Consumes: Task 6의 `HeaderStyle.FIELD`(하니스 측), Task 7 앱(2 인스턴스: A가 B를 호출하는 `/call-downstream` 엔드포인트 — spike의 sink 패턴 승격, `remote-fields=test.id` 설정)
 - Produces: 없음
 
-- [ ] **Step 1: E2E 작성** — Docker 불요 구성이 가능하면 프로세스 2개로 대체(스파이크가 동일 앱 2 엔드포인트로 검증했음 — **컨테이너 없이 자식 JVM 2개**로 구현해 Docker 게이트 자체를 제거한다; 리뷰 지적의 teardown 게이트는 PID trap/finally로 동일 적용):
+- [ ] **Step 1: E2E 작성** — **자식 JVM 2개**(A·B 인스턴스, Docker 불요 — 요구사항명세도 이 결정으로 이미 정정됨). teardown은 finally에서 PID destroy + 잔존 0 단언:
+
+```java
+@Test @DisplayName("REQ-MM-013: 2-hop FIELD 스타일 — 양 서비스 exec가 같은 testId로 수집·병합")
+void twoHopSameTestId() throws Exception { /* 본문은 아래 절차 */ }
+```
   - 하니스: `POST A:/test/start?testId=D1` → `FIELD` 스타일 헤더(`test.id: D1`)로 `A:/call-downstream` → A가 자체 전파(B3+baggage field)로 B 호출 → 양쪽 stop/flush.
   - 단언: `A-out/D1.exec`와 `B-out/D1.exec` 존재 + `jacococli merge`(또는 ExecutionDataStore 병합) 후 **A에만 있는 클래스와 B에만 있는 클래스가 모두** 병합 결과에 존재.
   - finally: 두 자식 JVM PID destroy + `waitFor` — 잔존 프로세스 0 확인 단언 포함.
 - [ ] **Step 2: green → 매트릭스 REQ-MM-013 🟢(및 REQ-MM-008 E2E 교차 표기) → 커밋** — `test(e2e): 2-hop FIELD-style distributed collection`
-- 참고: 프로세스-기반으로 구현되면 요구사항명세의 "Docker 게이트" 문구를 매트릭스 갱신 시 "프로세스 2개(게이트 불필요)"로 정정한다(범위 축소가 아니라 게이트 완화 — 명세 역전파).
+- 참고: 요구사항명세·design spec의 Docker-게이트 문구는 이 plan 확정 시점에 이미 프로세스-기반으로 역전파 정정 완료(리뷰 반영) — Task 9에서 추가 정정 불필요.
 
 ---
 
@@ -473,12 +506,17 @@ void bootsWithDefaultIncludes() throws Exception {
     assertTrue(AgentOptions.parse("destdir=/x,control=false").parseWarnings().isEmpty());
     assertEquals(1, AgentOptions.parse("someNewOption=1").parseWarnings().size());
 }
-/** REQ-MM-015(b): recordCoverage 핫패스 무변경 — 소스 체크섬 고정. 변경 시 이 테스트와
- *  요구사항명세(성능 계약)를 함께 갱신할 것. */
+/** REQ-MM-015(b): recordCoverage 핫패스 무변경 — 메서드 본문만 해시(파일 전체 아님: 무관한
+ *  javadoc/다른 메서드 수정에 오탐하지 않도록). CoverageBridge.java의 recordCoverage 메서드를
+ *  `// HOT-PATH-BEGIN` / `// HOT-PATH-END` 마커로 감싸고(주석 추가는 핫패스 바이트코드 무영향)
+ *  마커 사이 텍스트의 SHA-256을 고정한다. 변경 시 이 테스트와 요구사항명세(성능 계약)를 함께
+ *  갱신할 것. */
 @Test void recordCoverageSourceUnchanged() throws Exception {
-    byte[] src = Files.readAllBytes(Paths.get("src/main/java/io/pjacoco/agent/probe/CoverageBridge.java"));
-    String sha = /* MessageDigest SHA-256 hex */;
-    assertEquals("<구현 시 현재 파일의 실제 해시로 고정>", sha);
+    String src = new String(Files.readAllBytes(
+            Paths.get("src/main/java/io/pjacoco/agent/probe/CoverageBridge.java")), StandardCharsets.UTF_8);
+    String body = src.substring(src.indexOf("// HOT-PATH-BEGIN"), src.indexOf("// HOT-PATH-END"));
+    String sha = /* MessageDigest SHA-256 of body, hex */;
+    assertEquals("<구현 시 마커 추가 후 실제 해시로 고정>", sha);
 }
 ```
 (주의: 해시 고정은 이 브랜치의 최종 CoverageBridge 기준으로 구현 마지막에 채운다. `AgentOptionsParseWarningsTest#allKnownKeysParseWithoutWarnings`가 이미 존재하므로 (a)는 그 테스트에 "신규 키 경고" 케이스 추가로 갈음해도 된다 — 구현자가 중복 없는 쪽 선택.)
