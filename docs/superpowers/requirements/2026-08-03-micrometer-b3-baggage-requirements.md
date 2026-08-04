@@ -171,6 +171,16 @@
     자식 JVM 프로세스가 0이다(PID 한정 finally teardown — 전역 누수 검증 게이트 준수).
 - 검증 레벨: E2E black-box (MM-E2E-3 — **자식 JVM 2개(A·B 인스턴스)로 구현, Docker 불요**;
   plan 리뷰에서 역전파 정정: spike가 컨테이너 없이 동일 검증을 수행했음)
+- **역전파(Task 9 구현 중 발견):** 위 수용기준의 "`<testId>.exec`"는 §4.6("트레이서-활성 앱에서의
+  test.id")이 이미 명시한 대로, 하니스가 보낸 문자열 `testId`가 아니라 **전파된 Brave traceId**로
+  실현된다 — 두 인스턴스 모두 항상-on 트레이서(`sampling.probability=1.0`)이므로
+  `ServletAdvice.activate()`의 우선순위(트레이서 소스가 baggage 폴백보다 항상 우선)상 baggage
+  폴백은 도달 불가하고(S5 재확증), 커버리지 키는 항상 traceId다. 따라서 양쪽 인스턴스
+  `traceKeyAutoCreate=true`로 실행하고, 공유 키(traceId)는 응답 바디에서 읽어 두 exec 파일명으로
+  쓴다(`MmTracerPathE2E#asyncAttributedToSameStore`와 동일 기법). 하니스가 보내는
+  `HeaderStyle.FIELD`의 `test.id: D1` 헤더는 커버리지 키에 관여하지 않지만, B의 `/sink` 헤더 덤프로
+  실제 2-hop 와이어 전파(REQ-MM-008 E2E 교차)를 별도로 검증한다. 매트릭스 수용 테스트는 변경 없음
+  (`MmDistributedFieldE2E#twoHopSameTestId`).
 
 ### REQ-MM-014 — 문서화 (헤더 규약 표 + HeaderStyle + async 전제)
 - 유형: Functional / 우선순위: Should
@@ -212,12 +222,12 @@
 | REQ-MM-011 | Boot 3 기본값 부팅 성공 | MmBoot3BootE2E#bootsWithDefaultIncludes | E2E | 🟢 green |
 | REQ-MM-016 | JVM 생성 클래스 무조건 제외 | ProxyExclusionTest#transformReturnsNullForJdkInternalReflectAccessor/#explicitIncludesCannotReenableJdkInternalReflect | IT | 🟢 green |
 | REQ-MM-012 | 트레이서 경로 동기+async | MmTracerPathE2E#b3TraceIdKeyedStore/#asyncAttributedToSameStore | E2E | 🟡 partial (테스트 2건 green; CI 전용 잡 배선 기준은 Task 10 대기) |
-| REQ-MM-013 | 분산 2-hop FIELD | MmDistributedFieldE2E#twoHopSameTestId | E2E | 🔴 planned |
+| REQ-MM-013 | 분산 2-hop FIELD | MmDistributedFieldE2E#twoHopSameTestId | E2E | 🟢 green |
 | REQ-MM-014 | 문서화 | (PR 문서동기화 게이트 — README ko/en + 릴리스 노트 검토) | doc | 🔴 planned |
 | REQ-MM-015 | 표면 불변 제약 | KnownKeysSnapshotTest + HotPathGuardTest + jdk8-compat CI | IT+CI | 🔴 planned |
 | (공통) | MM E2E CI 배선(REQ-MM-011·012·013) | CI workflow diff 검토 — `e2e-mm-boot3` 전용 JDK 17 잡 신설 확인(코드 리뷰 게이트) | review | 🔴 planned |
 
-Coverage: 12/16 green (75%) — target 100% (대상: Must 13 + Should 3, 연기 없음 / Won't 0)
+Coverage: 13/16 green (81%) — target 100% (대상: Must 13 + Should 3, 연기 없음 / Won't 0)
 
 ## 테스트 배치·환경 (매트릭스 각주)
 
