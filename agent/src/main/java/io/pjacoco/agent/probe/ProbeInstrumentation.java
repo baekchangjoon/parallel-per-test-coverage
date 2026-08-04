@@ -139,7 +139,12 @@ public final class ProbeInstrumentation {
             }
             String dotted = vmName.replace('/', '.');
             if (dotted.startsWith("io.pjacoco.") || dotted.startsWith("org.jacoco.")
-                    || dotted.startsWith("net.bytebuddy.") || dotted.startsWith("org.objectweb.asm.")) {
+                    || dotted.startsWith("net.bytebuddy.") || dotted.startsWith("org.objectweb.asm.")
+                    // JDK dynamic proxies: generated code in dynamic modules; instrumenting them
+                    // injects a $jacocoInit that crosses JPMS read edges -> IllegalAccessError at
+                    // boot (Boot 3, discovered by the 2026-08-03 spike). Unconditional, like the
+                    // self-excludes above — user includes=/excludes= cannot re-enable it.
+                    || dotted.startsWith("jdk.proxy") || dotted.startsWith("com.sun.proxy.")) {
                 return null;                                                 // never instrument self/embedded libs
             }
             if (!includes.matches(dotted) || (excludes != null && excludes.matches(dotted))) return null;

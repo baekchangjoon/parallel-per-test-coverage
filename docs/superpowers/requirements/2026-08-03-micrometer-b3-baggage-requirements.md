@@ -193,7 +193,7 @@
 | REQ-MM-007 | 카운터 3종 + 파티션 불변식 | BaggageHeadersTest#countersPartitionFallbackActivations/#countersAppearInSummary | IT | 🟢 green |
 | REQ-MM-008 | HeaderStyle FIELD emit | HeaderStyleTest#fieldEmitsFieldHeaderOnly/#bothEmitsBoth/#baggageFilterStyleOverload + MmDistributedFieldE2E#twoHopSameTestId(교차) | IT+E2E | 🔴 planned |
 | REQ-MM-009 | `enable()` 무회귀 | HeaderStyleTest#noArgEnableKeepsW3c | IT | 🔴 planned |
-| REQ-MM-010 | 프록시 무조건 제외 | ProxyExclusionTest#transformReturnsNullForJdkProxy/#explicitIncludesCannotReenable | IT | 🔴 planned |
+| REQ-MM-010 | 프록시 무조건 제외 | ProxyExclusionTest#transformReturnsNullForJdkProxy/#explicitIncludesCannotReenable | IT | 🟢 green |
 | REQ-MM-011 | Boot 3 기본값 부팅 성공 | MmBoot3BootE2E#bootsWithDefaultIncludes | E2E | 🔴 planned |
 | REQ-MM-012 | 트레이서 경로 동기+async | MmTracerPathE2E#b3TraceIdKeyedStore/#asyncAttributedToSameStore | E2E | 🔴 planned |
 | REQ-MM-013 | 분산 2-hop FIELD | MmDistributedFieldE2E#twoHopSameTestId | E2E | 🔴 planned |
@@ -201,7 +201,7 @@
 | REQ-MM-015 | 표면 불변 제약 | KnownKeysSnapshotTest + HotPathGuardTest + jdk8-compat CI | IT+CI | 🔴 planned |
 | (공통) | MM E2E CI 배선(REQ-MM-011·012·013) | CI workflow diff 검토 — `e2e-mm-boot3` 전용 JDK 17 잡 신설 확인(코드 리뷰 게이트) | review | 🔴 planned |
 
-Coverage: 6/15 green (40%) — target 100% (대상: Must 12 + Should 3, 연기 없음 / Won't 0)
+Coverage: 7/15 green (47%) — target 100% (대상: Must 12 + Should 3, 연기 없음 / Won't 0)
 
 ## 테스트 배치·환경 (매트릭스 각주)
 
