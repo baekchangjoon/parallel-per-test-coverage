@@ -12,10 +12,14 @@ import org.jacoco.core.runtime.LoggerRuntime;
 import org.junit.jupiter.api.Test;
 
 /**
- * Exclusion guard for JDK dynamic proxies: generated in dynamic modules (jdk.proxy3, com.sun.proxy)
- * as synthetic implementations of interfaces. Instrumenting them injects a $jacocoInit that crosses
- * JPMS read edges and throws IllegalAccessError at boot (Boot 3, discovered by the 2026-08-03 spike).
- * Unconditional exclusion, like the self-excludes above — user includes=/excludes= cannot re-enable it.
+ * Exclusion guard for JVM-generated classes that live outside the normal bootstrap/platform
+ * loaders: JDK dynamic proxies (jdk.proxy3, com.sun.proxy — synthetic interface implementations)
+ * and jdk.internal.reflect.Generated*Accessor* (reflective invocation accessors, generated via a
+ * fresh per-generation DelegatingClassLoader). Instrumenting either crosses an internal access
+ * boundary — proxies throw IllegalAccessError at class init (Boot 3, 2026-08-03 spike); reflect
+ * accessors surface as NoClassDefFoundError on next reference (found via MmBoot3BootE2E). Both
+ * exclusions are unconditional, like the self-excludes above — user includes=/excludes= cannot
+ * re-enable them.
  */
 class ProxyExclusionTest {
 
@@ -56,5 +60,23 @@ class ProxyExclusionTest {
         assertNull(transformer("includes=jdk.proxy*").transform(
                 ProxyExclusionTest.class.getClassLoader(), "jdk/proxy3/$Proxy42", null, null, classBytes()),
                 "even explicit includes=jdk.proxy* must NOT re-enable jdk.proxy instrumentation");
+    }
+
+    /** Discovery method: a plain Boot 3 app doing component-scan annotation reflection crashed with
+     *  NoClassDefFoundError: jdk/internal/reflect/GeneratedConstructorAccessorN under default
+     *  includes=* (found via MmBoot3BootE2E in e2e-mm-boot3, same failure family as jdk.proxy* above —
+     *  a JVM-generated class loaded outside the normal bootstrap/platform loader). */
+    @Test void transformReturnsNullForJdkInternalReflectAccessor() throws IOException {
+        assertNull(transformer("includes=*").transform(
+                ProxyExclusionTest.class.getClassLoader(),
+                "jdk/internal/reflect/GeneratedConstructorAccessor3", null, null, classBytes()),
+                "jdk.internal.reflect.Generated*Accessor* must NOT be instrumented under any includes");
+    }
+
+    @Test void explicitIncludesCannotReenableJdkInternalReflect() throws IOException {
+        assertNull(transformer("includes=jdk.internal.reflect.*").transform(
+                ProxyExclusionTest.class.getClassLoader(),
+                "jdk/internal/reflect/GeneratedConstructorAccessor3", null, null, classBytes()),
+                "even explicit includes=jdk.internal.reflect.* must NOT re-enable this instrumentation");
     }
 }

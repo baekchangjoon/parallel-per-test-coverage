@@ -21,4 +21,5 @@ target/
 
 # local session artifacts (agent runs at repo root) + Claude Code worktrees
 /coverage/
+/e2e-mm-boot3/coverage/
 .claude/

@@ -16,15 +16,14 @@ public class AsyncWorker {
         this.tracer = tracer;
     }
 
+    // Straight-line (no ternary/if): deterministic per-line probe coverage for REQ-MM-012's
+    // 100%-of-executed-lines assertion in Task 8 — a conditional here would leave some lines
+    // input-dependent and non-deterministic across runs/inputs.
     @Async("appExecutor")
     public CompletableFuture<String> work(int inputCount) {
         int total = 0;
         for (int index = 0; index < inputCount; index++) {
-            if (index % 3 == 0) {
-                total += index * 5;
-            } else {
-                total += index;
-            }
+            total += index * 5;
         }
         Span currentSpan = tracer.currentSpan();
         String asyncTraceId = currentSpan != null ? currentSpan.context().traceId() : "none";

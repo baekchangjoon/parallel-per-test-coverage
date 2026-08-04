@@ -11,6 +11,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Enumeration;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,16 +26,21 @@ public class SpikeController {
     private final DownstreamWorker downstreamWorker;
     private final RestTemplate restTemplate;
     private final Environment environment;
+    // Task 9's 2-hop distributed E2E injects instance B's base URL here; default (blank) means
+    // "call self" (unchanged single-instance behavior).
+    private final String downstreamBaseUrl;
 
     public SpikeController(Tracer tracer, SyncWorker syncWorker, AsyncWorker asyncWorker,
                            DownstreamWorker downstreamWorker, RestTemplate restTemplate,
-                           Environment environment) {
+                           Environment environment,
+                           @Value("${downstream.base-url:}") String downstreamBaseUrl) {
         this.tracer = tracer;
         this.syncWorker = syncWorker;
         this.asyncWorker = asyncWorker;
         this.downstreamWorker = downstreamWorker;
         this.restTemplate = restTemplate;
         this.environment = environment;
+        this.downstreamBaseUrl = downstreamBaseUrl;
     }
 
     private String requestTraceId() {
@@ -58,9 +64,16 @@ public class SpikeController {
     @GetMapping("/call-downstream")
     public String callDownstream() {
         String markResult = downstreamWorker.mark(10);
-        String port = environment.getProperty("local.server.port", "0");
-        String sinkResponse = restTemplate.getForObject("http://127.0.0.1:" + port + "/sink", String.class);
+        String sinkResponse = restTemplate.getForObject(downstreamBase() + "/sink", String.class);
         return "requestTraceId=" + requestTraceId() + ";" + markResult + ";sink=" + sinkResponse;
+    }
+
+    private String downstreamBase() {
+        if (downstreamBaseUrl != null && !downstreamBaseUrl.isBlank()) {
+            return downstreamBaseUrl;
+        }
+        String port = environment.getProperty("local.server.port", "0");
+        return "http://127.0.0.1:" + port;
     }
 
     @GetMapping("/sink")

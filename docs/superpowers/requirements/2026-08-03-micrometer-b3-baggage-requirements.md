@@ -126,6 +126,15 @@
   - Given Boot 3.3 앱 + agent `includes=*`(기본), When 기동, Then `IllegalAccessError` 없이
     부팅이 완료되고 HTTP 응답이 정상이다.
 - 검증 레벨: E2E black-box (MM-E2E-4)
+- **역전파(Task 7 구현 중 발견):** REQ-MM-010(Task 4)의 `jdk.proxy*`/`com.sun.proxy.*` 제외만으로는
+  본 REQ가 green이 되지 않았다 — 평범한 Boot 3 컴포넌트 스캔의 애노테이션 리플렉션이 매 부팅마다
+  `jdk.internal.reflect.GeneratedConstructorAccessorN`(JVM이 매 생성마다 새 `DelegatingClassLoader`로
+  로드하는 리플렉션 액세서 — 부트스트랩/플랫폼 로더가 아니라 기존 스킵 체크에 걸리지 않음)을
+  계측해 `NoClassDefFoundError`로 부팅이 실패하는 것을 확인(3/3 재현, agent 유무로 원인 확정).
+  같은 무조건 제외 메커니즘을 `jdk.internal.reflect.`로 확장(`ProbeInstrumentation.java`)해
+  해결 — REQ-MM-010의 범위 확장으로 간주(신규 REQ-ID 미부여: 별도 요구가 아니라 REQ-MM-011 자체의
+  수용기준 "IllegalAccessError 없이 부팅"을 충족시키는 데 필수). `ProxyExclusionTest`에 대응 테스트
+  2건 추가. ablation으로 두 제외 모두 없으면 실패, 각각 있으면 성공함을 확인(발견-방법 보존).
 
 ### REQ-MM-012 — Boot 3 + bridge-brave 트레이서 경로 검증 (동기+async)
 - 유형: Functional / 우선순위: Must
@@ -194,14 +203,14 @@
 | REQ-MM-008 | HeaderStyle FIELD emit | HeaderStyleTest#fieldEmitsFieldHeaderOnly/#bothEmitsBoth/#baggageFilterStyleOverload + MmDistributedFieldE2E#twoHopSameTestId(교차) | IT+E2E | 🟢 green |
 | REQ-MM-009 | `enable()` 무회귀 | HeaderStyleTest#noArgEnableKeepsW3c | IT | 🟢 green |
 | REQ-MM-010 | 프록시 무조건 제외 | ProxyExclusionTest#transformReturnsNullForJdkProxy/#explicitIncludesCannotReenable | IT | 🟢 green |
-| REQ-MM-011 | Boot 3 기본값 부팅 성공 | MmBoot3BootE2E#bootsWithDefaultIncludes | E2E | 🔴 planned |
+| REQ-MM-011 | Boot 3 기본값 부팅 성공 | MmBoot3BootE2E#bootsWithDefaultIncludes | E2E | 🟢 green |
 | REQ-MM-012 | 트레이서 경로 동기+async | MmTracerPathE2E#b3TraceIdKeyedStore/#asyncAttributedToSameStore | E2E | 🔴 planned |
 | REQ-MM-013 | 분산 2-hop FIELD | MmDistributedFieldE2E#twoHopSameTestId | E2E | 🔴 planned |
 | REQ-MM-014 | 문서화 | (PR 문서동기화 게이트 — README ko/en + 릴리스 노트 검토) | doc | 🔴 planned |
 | REQ-MM-015 | 표면 불변 제약 | KnownKeysSnapshotTest + HotPathGuardTest + jdk8-compat CI | IT+CI | 🔴 planned |
 | (공통) | MM E2E CI 배선(REQ-MM-011·012·013) | CI workflow diff 검토 — `e2e-mm-boot3` 전용 JDK 17 잡 신설 확인(코드 리뷰 게이트) | review | 🔴 planned |
 
-Coverage: 10/15 green (67%) — target 100% (대상: Must 12 + Should 3, 연기 없음 / Won't 0)
+Coverage: 11/15 green (73%) — target 100% (대상: Must 12 + Should 3, 연기 없음 / Won't 0)
 
 ## 테스트 배치·환경 (매트릭스 각주)
 
