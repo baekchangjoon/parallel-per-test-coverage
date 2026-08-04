@@ -13,6 +13,14 @@ public final class Metrics {
     public final AtomicLong scopeHookInjectionFailures = new AtomicLong();
     /** Incremented when activation falls back from a tracer source to the local/baggage source. */
     public final AtomicLong fallbackActivations = new AtomicLong();
+    /** Subset of fallbackActivations resolved via the W3C {@code baggage} header (REQ-MM-004/007). */
+    public final AtomicLong testIdFromW3cBaggage = new AtomicLong();
+    /** Subset of fallbackActivations resolved via the Brave/Micrometer {@code test.id} field header
+     *  (REQ-MM-001/004/007). */
+    public final AtomicLong testIdFromFieldHeader = new AtomicLong();
+    /** Subset of fallbackActivations resolved via the legacy Sleuth {@code baggage-test.id} field
+     *  header (REQ-MM-002/004/007). */
+    public final AtomicLong testIdFromLegacyFieldHeader = new AtomicLong();
     /** Incremented when a per-trace store is reported without a registered traceId->testId mapping
      *  (the raw traceId is used as the testId). */
     public final AtomicLong unmappedTraceIds = new AtomicLong();
@@ -45,6 +53,9 @@ public final class Metrics {
                 + " retries=" + retriesOverwritten.get()
                 + " scopeHookInjectFail=" + scopeHookInjectionFailures.get()
                 + " fallbackActivations=" + fallbackActivations.get()
+                + " testIdFromW3cBaggage=" + testIdFromW3cBaggage.get()
+                + " testIdFromFieldHeader=" + testIdFromFieldHeader.get()
+                + " testIdFromLegacyFieldHeader=" + testIdFromLegacyFieldHeader.get()
                 + " unmapped=" + unmappedTraceIds.get()
                 + " evictedInFlight=" + evictedInFlightTraces.get()
                 + " instrumentFailures=" + instrumentFailures.get()

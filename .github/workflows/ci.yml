@@ -133,3 +133,14 @@ jobs:
             || { echo "::error::maven-sample did not produce T1.exec"; exit 1; }
           grep -q '"classCount":1' samples/maven-sample/target/pjacoco/T1.json \
             || { echo "::error::T1 did not record Calc coverage"; exit 1; }
+
+  mm-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17", cache: gradle }
+      - name: Build agent + testkits, then run Boot 3 E2E (standalone JDK-17 build)
+        run: |
+          ./gradlew --no-daemon :agent:shadowJar :testkit-core:jar :testkit-restassured:jar
+          cd e2e-mm-boot3 && ../gradlew --no-daemon test

@@ -139,7 +139,22 @@ public final class ProbeInstrumentation {
             }
             String dotted = vmName.replace('/', '.');
             if (dotted.startsWith("io.pjacoco.") || dotted.startsWith("org.jacoco.")
-                    || dotted.startsWith("net.bytebuddy.") || dotted.startsWith("org.objectweb.asm.")) {
+                    || dotted.startsWith("net.bytebuddy.") || dotted.startsWith("org.objectweb.asm.")
+                    // JDK dynamic proxies: generated code in dynamic modules; instrumenting them
+                    // injects a $jacocoInit that crosses JPMS read edges -> IllegalAccessError at
+                    // boot (Boot 3, discovered by the 2026-08-03 spike). Failure occurs at class
+                    // initialization (after instrument() succeeds), so the only reliable observable is
+                    // this pre-check. Unconditional, like the self-excludes above — user
+                    // includes=/excludes= cannot re-enable it.
+                    || dotted.startsWith("jdk.proxy") || dotted.startsWith("com.sun.proxy.")
+                    // jdk.internal.reflect.Generated*Accessor*: JVM-generated reflective invocation/
+                    // constructor accessors, defined via a fresh per-generation DelegatingClassLoader
+                    // (not the platform loader, so the bootstrap/platform check above doesn't catch
+                    // them). Same failure family as jdk.proxy* above: instrumenting them crosses an
+                    // internal access boundary and corrupts the class, surfacing as NoClassDefFoundError
+                    // on next reference (discovered via MmBoot3BootE2E — plain Boot 3 component-scan
+                    // annotation reflection triggers accessor generation on every boot).
+                    || dotted.startsWith("jdk.internal.reflect.")) {
                 return null;                                                 // never instrument self/embedded libs
             }
             if (!includes.matches(dotted) || (excludes != null && excludes.matches(dotted))) return null;
