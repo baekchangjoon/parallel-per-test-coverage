@@ -73,16 +73,8 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 > maven-plugin)는 Maven Central에서 바로 resolve됩니다 — **Maven 사용자는 아래 예시를 그대로 복사해
 > 쓰면 됩니다.** 별도 저장소 설정 불필요.
 >
-> ⏳ **Gradle 플러그인만 Plugin Portal 승인 대기 중:** 신규 플러그인은 Gradle 엔지니어의 수동 승인을
-> 거칩니다. 승인 전까지 `plugins { id("io.github.beltian.pjacoco") }`는 Portal에서 resolve되지 않으므로,
-> Gradle 사용자는 임시로 플러그인만 로컬 설치가 필요합니다(라이브러리는 Central에서 받아집니다):
->
-> ```bash
-> ./gradlew :gradle-plugin:publishToMavenLocal   # 플러그인만 mavenLocal에 (소스 클론 후 1회)
-> ```
-> + 소비 프로젝트 `settings.gradle.kts`에 `pluginManagement { repositories { mavenLocal(); gradlePluginPortal() } }`
-> (예: [`samples/gradle-sample`](samples/gradle-sample)). 대안: 플러그인 없이 Central의 agent jar를 수동
-> `-javaagent`로 부착해도 됩니다. **승인 완료 시 이 안내는 제거됩니다.**
+> ✅ **Gradle Plugin Portal 공개 완료:** `plugins { id("io.github.beltian.pjacoco") version "2.1.0" }`
+> 가 Portal에서 바로 resolve됩니다 — 별도 설정 없이 아래 예시를 그대로 사용하세요.
 >
 > (소스 전체를 로컬 설치하려면 `./scripts/install-local.sh` — agent·testkit·플러그인 2종을 한 번에 설치)
 >
@@ -92,11 +84,11 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 >
 > ```bash
 > # v1.4.1+ jar에는 POM이 내장돼 있어 GAV 지정 없이 설치됩니다. 순서: agent 먼저(플러그인·킷이 참조).
-> mvn install:install-file -Dfile=pjacoco-agent-2.0.0.jar \
->   -DgroupId=io.github.beltian.pjacoco -DartifactId=pjacoco-agent -Dversion=2.0.0 -Dpackaging=jar   # agent는 shaded jar라 GAV 지정
-> mvn install:install-file -Dfile=pjacoco-testkit-2.0.0.jar            # POM 내장
-> mvn install:install-file -Dfile=pjacoco-testkit-junit5-2.0.0.jar     # POM 내장 (testkit-core를 transitive로 끌어옴)
-> mvn install:install-file -Dfile=pjacoco-maven-plugin-2.0.0.jar       # POM 내장
+> mvn install:install-file -Dfile=pjacoco-agent-2.1.0.jar \
+>   -DgroupId=io.github.beltian.pjacoco -DartifactId=pjacoco-agent -Dversion=2.1.0 -Dpackaging=jar   # agent는 shaded jar라 GAV 지정
+> mvn install:install-file -Dfile=pjacoco-testkit-2.1.0.jar            # POM 내장
+> mvn install:install-file -Dfile=pjacoco-testkit-junit5-2.1.0.jar     # POM 내장 (testkit-core를 transitive로 끌어옴)
+> mvn install:install-file -Dfile=pjacoco-maven-plugin-2.1.0.jar       # POM 내장
 > ```
 > ≤1.4.0 릴리스 jar에는 testkit POM이 없어 stub POM으로 설치되며, 그 경우 `pjacoco-testkit`(core)를
 > 의존성에 **직접** 추가해야 합니다.
@@ -150,9 +142,9 @@ class OwnerBlackBoxIT {
 ```
 
 > 아티팩트 이름: 에이전트 `io.github.beltian.pjacoco:pjacoco-agent`, 테스트킷 `io.github.beltian.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
-> Gradle 플러그인 id `io.github.beltian.pjacoco`, Maven 플러그인 `io.github.beltian.pjacoco:pjacoco-maven-plugin`. 공개 배포(Maven
-> Central / Gradle Plugin Portal)는 **아직 미완료**(예정된 후속 과제, REQ-D03) — 지금은 위 안내대로 로컬
-> 설치 후 쓰며, 절차는 [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
+> Gradle 플러그인 id `io.github.beltian.pjacoco`, Maven 플러그인 `io.github.beltian.pjacoco:pjacoco-maven-plugin`. 전부
+> Maven Central과 Gradle Plugin Portal에서 바로 받아집니다(로컬 설치 불필요) — 배포 절차·검증은
+> [`docs/PUBLISHING.md`](docs/PUBLISHING.md) 참고.
 
 ## 인-프로세스 per-test 커버리지 (서블릿 경계 없이)
 
@@ -169,8 +161,8 @@ JUnit 5 익스텐션이 스위트 전체에 자동 적용됩니다(애너테이�
 `junit-platform.properties` 로 켜며, 아래 "Maven에서 JUnit 5 자동 등록" 에서 다룹니다. JUnit 4는
 에이전트가 처리하므로 `@Rule` 도 필요 없습니다.
 
-> 라이브러리·maven-plugin은 Maven Central에서 받아집니다. Gradle 플러그인만 Portal 승인 대기 중이라
-> 당분간 `:gradle-plugin:publishToMavenLocal` 로컬 설치가 필요합니다(위 "빠른 시작" 안내 참고).
+> 라이브러리·maven-plugin은 Maven Central에서, Gradle 플러그인은 Plugin Portal에서 받아집니다 —
+> 로컬 설치 불필요.
 
 ```kotlin
 plugins { id("io.github.beltian.pjacoco") version "2.1.0" }

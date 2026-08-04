@@ -77,18 +77,8 @@ Test harness                          Target app JVM  (-javaagent:pjacoco-agent.
 > the four testkits, and the maven-plugin) resolve straight from Maven Central — **Maven users can
 > copy the examples below verbatim.** No extra repository configuration needed.
 >
-> ⏳ **Only the Gradle plugin awaits Plugin Portal approval:** new plugins go through a manual review
-> by Gradle engineers. Until it lands, `plugins { id("io.github.beltian.pjacoco") }` does not resolve
-> from the Portal, so Gradle users need a local install of just the plugin (the libraries still come
-> from Central):
->
-> ```bash
-> ./gradlew :gradle-plugin:publishToMavenLocal   # plugin only, once, after cloning the source
-> ```
-> plus `pluginManagement { repositories { mavenLocal(); gradlePluginPortal() } }` in the consumer's
-> `settings.gradle.kts` (see [`samples/gradle-sample`](samples/gradle-sample)). Alternative: skip the
-> plugin and attach Central's agent jar manually via `-javaagent`. **This notice is removed once the
-> plugin is approved.**
+> ✅ **Published on the Gradle Plugin Portal:** `plugins { id("io.github.beltian.pjacoco") version "2.1.0" }`
+> resolves straight from the Portal — copy the examples below verbatim, no extra setup.
 >
 > (To install everything from source in one step: `./scripts/install-local.sh`.)
 >
@@ -99,11 +89,11 @@ Test harness                          Target app JVM  (-javaagent:pjacoco-agent.
 >
 > ```bash
 > # v1.4.1+ jars embed their POMs, so they install without GAV flags. Order: agent first (the plugin and testkits reference it).
-> mvn install:install-file -Dfile=pjacoco-agent-2.0.0.jar \
->   -DgroupId=io.github.beltian.pjacoco -DartifactId=pjacoco-agent -Dversion=2.0.0 -Dpackaging=jar   # agent is a shaded jar, so pass the GAV
-> mvn install:install-file -Dfile=pjacoco-testkit-2.0.0.jar            # embedded POM
-> mvn install:install-file -Dfile=pjacoco-testkit-junit5-2.0.0.jar     # embedded POM (pulls testkit-core transitively)
-> mvn install:install-file -Dfile=pjacoco-maven-plugin-2.0.0.jar       # embedded POM
+> mvn install:install-file -Dfile=pjacoco-agent-2.1.0.jar \
+>   -DgroupId=io.github.beltian.pjacoco -DartifactId=pjacoco-agent -Dversion=2.1.0 -Dpackaging=jar   # agent is a shaded jar, so pass the GAV
+> mvn install:install-file -Dfile=pjacoco-testkit-2.1.0.jar            # embedded POM
+> mvn install:install-file -Dfile=pjacoco-testkit-junit5-2.1.0.jar     # embedded POM (pulls testkit-core transitively)
+> mvn install:install-file -Dfile=pjacoco-maven-plugin-2.1.0.jar       # embedded POM
 > ```
 > ≤1.4.0 release jars carry no testkit POMs, so they install with stub POMs — in that case add
 > `pjacoco-testkit` (core) to your dependencies **manually**.
@@ -157,9 +147,9 @@ class OwnerBlackBoxIT {
 ```
 
 > Artifact names: agent `io.github.beltian.pjacoco:pjacoco-agent`, testkit `io.github.beltian.pjacoco:pjacoco-testkit[-junit5|-junit4|-restassured]`,
-> Gradle plugin id `io.github.beltian.pjacoco`, Maven plugin `io.github.beltian.pjacoco:pjacoco-maven-plugin`. Public release
-> (Maven Central / Gradle Plugin Portal) is **not done yet** (planned follow-up, REQ-D03) — for now use
-> the local install above; procedure in [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
+> Gradle plugin id `io.github.beltian.pjacoco`, Maven plugin `io.github.beltian.pjacoco:pjacoco-maven-plugin`. Everything
+> resolves straight from Maven Central and the Gradle Plugin Portal (no local install needed) —
+> publishing procedure and validation: [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 ## In-process per-test coverage (no servlet boundary)
 
@@ -175,10 +165,6 @@ dependency, and the JUnit 5 extension applies across the whole suite automatical
 The Gradle plugin enables JUnit 5 extension autodetection for you, so no `@ExtendWith` is needed — on
 Maven you enable it via `junit-platform.properties` (covered under "JUnit 5 auto-registration on Maven"
 below). JUnit 4 is handled by the agent, so it needs no `@Rule` either.
-
-> The artifacts are not on Maven Central / the Gradle Plugin Portal yet (public release pending). For
-> now, build from source and install them locally with `publishToMavenLocal` — see
-> [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 ```kotlin
 plugins { id("io.github.beltian.pjacoco") version "2.1.0" }
