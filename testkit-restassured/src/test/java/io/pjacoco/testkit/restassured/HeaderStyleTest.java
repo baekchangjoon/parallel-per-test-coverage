@@ -15,6 +15,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class HeaderStyleTest {
 
@@ -75,6 +77,17 @@ class HeaderStyleTest {
                 .then().statusCode(200);
         assertEquals("test.id=T3", lastBaggage.get(), "W3C_BAGGAGE style must emit the baggage header");
         assertNull(lastFieldHeader.get(), "W3C_BAGGAGE style must not emit the test.id field header");
+    }
+
+    @ParameterizedTest
+    @EnumSource(HeaderStyle.class)
+    void noHeadersWhenNoTestActive(HeaderStyle style) {
+        // no setCurrentTestId — neither header should be sent for any style
+        given().filter(PjacocoRestAssured.baggageFilter(style))
+                .when().get("http://127.0.0.1:" + port + "/api")
+                .then().statusCode(200);
+        assertNull(lastBaggage.get(), style + " must not emit baggage header when no test is active");
+        assertNull(lastFieldHeader.get(), style + " must not emit field header when no test is active");
     }
 
     @Test

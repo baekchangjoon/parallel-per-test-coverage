@@ -201,7 +201,7 @@
 | REQ-MM-015 | 표면 불변 제약 | KnownKeysSnapshotTest + HotPathGuardTest + jdk8-compat CI | IT+CI | 🔴 planned |
 | (공통) | MM E2E CI 배선(REQ-MM-011·012·013) | CI workflow diff 검토 — `e2e-mm-boot3` 전용 JDK 17 잡 신설 확인(코드 리뷰 게이트) | review | 🔴 planned |
 
-Coverage: 7/15 green (47%) — target 100% (대상: Must 12 + Should 3, 연기 없음 / Won't 0)
+Coverage: 10/15 green (67%) — target 100% (대상: Must 12 + Should 3, 연기 없음 / Won't 0)
 
 ## 테스트 배치·환경 (매트릭스 각주)
 
