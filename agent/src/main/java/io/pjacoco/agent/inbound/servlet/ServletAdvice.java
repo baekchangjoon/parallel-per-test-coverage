@@ -73,19 +73,23 @@ public final class ServletAdvice {
 
             // Try tracer sources first (OTel, Brave).
             String key = new CoverageKeyResolver(traceSources).resolve();
+            boolean fromFallback = false;
 
             // If no tracer context is active, fall back to the baggage headers (REQ-007 + REQ-MM-004).
             if (key == null) {
                 String local = fallbackTestId(request);
                 if (local != null) {
                     key = local;
+                    fromFallback = true;
                     Metrics m = metrics;
                     if (m != null) m.fallbackActivations.incrementAndGet();  // REQ-019 불변식: 3종 공통
                 }
             }
 
             if (key != null) {
-                TestStore store = reg.forCoverageKey(key);
+                // REQ-MM-006: auto-create (traceKeyAutoCreate) is tracer-key-only. A baggage-fallback-derived
+                // key always follows the plain registry contract (strict/lenient) via active(key).
+                TestStore store = fromFallback ? reg.active(key) : reg.forCoverageKey(key);
                 if (store != null) {
                     CoverageContext.set(store);
                 }

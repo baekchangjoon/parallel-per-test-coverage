@@ -189,7 +189,7 @@
 | REQ-MM-003 | W3C 무회귀 + 파서 분리 | MmBaggageHeadersE2E#w3cBaggageUnchanged + BaggageHeadersTest#w3cParserOnlyForBaggageHeader | E2E+IT | 🟢 green |
 | REQ-MM-004 | 헤더 우선순위 계약 | BaggageHeadersTest#priority3Way/#pairwiseAll/#malformedBaggageFallsThrough + MmBaggageHeadersE2E#conflictW3cWins | IT+E2E | 🟢 green |
 | REQ-MM-005 | 빈 값 폴스루 | BaggageHeadersTest#emptyValueFallsThrough/#allEmptyGoesMissingPath | IT | 🟢 green |
-| REQ-MM-006 | 폴백 키 store 생성 규칙 | StoreCreationRuleIT#baggageKeySkipsAutoCreate/#servletTracerKeyAutoCreates/#scopeBridgeKeyAutoCreates | IT | 🔴 planned |
+| REQ-MM-006 | 폴백 키 store 생성 규칙 | StoreCreationRuleIT#baggageKeySkipsAutoCreate/#servletTracerKeyAutoCreates/#scopeBridgeKeyAutoCreates | IT | 🟢 green |
 | REQ-MM-007 | 카운터 3종 + 파티션 불변식 | BaggageHeadersTest#countersPartitionFallbackActivations/#countersAppearInSummary | IT | 🟢 green |
 | REQ-MM-008 | HeaderStyle FIELD emit | HeaderStyleTest#fieldEmitsFieldHeaderOnly/#bothEmitsBoth/#baggageFilterStyleOverload + MmDistributedFieldE2E#twoHopSameTestId(교차) | IT+E2E | 🔴 planned |
 | REQ-MM-009 | `enable()` 무회귀 | HeaderStyleTest#noArgEnableKeepsW3c | IT | 🔴 planned |
