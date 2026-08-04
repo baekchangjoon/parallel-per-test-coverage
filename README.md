@@ -111,15 +111,15 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 **Gradle** (`build.gradle.kts`):
 
 ```kotlin
-plugins { id("io.github.beltian.pjacoco") version "2.0.0" }
+plugins { id("io.github.beltian.pjacoco") version "2.1.0" }
 
 pjacoco {
     includes.set(listOf("com.example.*"))
     attachTo.set(listOf("integrationTest"))   // 이 테스트 태스크 JVM에 에이전트 + control-url 자동 주입
 }
 dependencies {
-    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.0.0")
-    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-restassured:2.0.0")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.1.0")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-restassured:2.1.0")
 }
 ```
 
@@ -139,7 +139,7 @@ class OwnerBlackBoxIT {
 
 ```xml
 <plugin>
-  <groupId>io.github.beltian.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>2.0.0</version>
+  <groupId>io.github.beltian.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>2.1.0</version>
   <executions><execution><goals><goal>prepare-agent</goal></goals></execution></executions>
   <configuration><includes><include>com.example.*</include></includes></configuration>
 </plugin>
@@ -173,14 +173,14 @@ JUnit 5 익스텐션이 스위트 전체에 자동 적용됩니다(애너테이�
 > 당분간 `:gradle-plugin:publishToMavenLocal` 로컬 설치가 필요합니다(위 "빠른 시작" 안내 참고).
 
 ```kotlin
-plugins { id("io.github.beltian.pjacoco") version "2.0.0" }
+plugins { id("io.github.beltian.pjacoco") version "2.1.0" }
 
 pjacoco {
     attachTo.set(listOf("test"))          // 에이전트를 주입할 테스트 태스크 이름
     includes.set(listOf("com.example.*")) // 인-프로세스 경로는 control-url 불필요
 }
 dependencies {
-    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.0.0")   // JUnit 5 자동 적용
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.1.0")   // JUnit 5 자동 적용
     // JUnit 4는 에이전트만으로 동작 — 의존성·@Rule 불필요
 }
 ```
@@ -270,6 +270,52 @@ java -javaagent:opentelemetry-javaagent.jar \
 >
 > OTel javaagent jar의 **파일명은 자유롭게 바꿔도 됩니다** (예: 컨테이너에서 `-javaagent:/opt/otel/otel.jar`로 마운트). pjacoco는 파일명이 아니라 jar 내부의 OTel shaded context-storage 클래스 존재로 javaagent를 식별합니다.
 
+### 헤더 규약 (Micrometer/Brave B3 지원)
+
+위 트레이서 경로가 꺼져 있을 때(baggage 폴백), 에이전트는 인바운드 헤더 3종을 순서대로 조회하며 첫
+번째 유효 값이 승리합니다:
+
+| 규약 | 인바운드 헤더 | 값 형식 | 주로 쓰는 스택 |
+|---|---|---|---|
+| W3C Baggage | `baggage` | `test.id=<id>[,...]` | OTel javaagent, 테스트킷 기본값 |
+| Brave/Micrometer 필드 헤더 | `test.id` | `<id>` | Boot 3 + `micrometer-tracing-bridge-brave`의 `remote-fields` |
+| legacy Sleuth | `baggage-test.id` | `<id>` | Boot 2/Sleuth 잔존 스택 |
+
+**테스트킷에서 필드 헤더 emit.** `HeaderStyle`(`W3C_BAGGAGE`/`FIELD`/`BOTH`)을 `enable()`/`baggageFilter()`에
+넘기면 원하는 형식으로 아웃바운드 헤더를 emit합니다. 기존 no-arg `enable()`은 그대로 `W3C_BAGGAGE`만
+emit합니다(무회귀).
+
+```java
+@BeforeAll
+static void enable() {
+    io.pjacoco.testkit.restassured.PjacocoRestAssured.enable(io.pjacoco.testkit.HeaderStyle.FIELD);
+}
+```
+
+SUT가 이 필드 헤더를 자체 앱 전파(B3)로 이어받으려면 remote field로 등록합니다(`application.yml`):
+
+```yaml
+management:
+  tracing:
+    baggage:
+      remote-fields: test.id
+```
+
+**우선순위/충돌 규칙.** 트레이서 경로가 활성이면(현재 스레드에 valid trace context가 있으면) 위 헤더
+어느 것도 store 키가 되지 않습니다 — 키는 항상 traceId이며, 헤더 폴백은 트레이서 컨텍스트가 없을 때만
+적용됩니다. 폴백 안에서는 한 요청에 여러 헤더가 와도 `baggage`(W3C) > `test.id` > `baggage-test.id`
+순으로 첫 번째 유효 값이 채택됩니다.
+
+**async 귀속 전제 조건.** `@Async`/executor로 넘긴 작업이 같은(트레이서-키) store로 귀속되려면, Boot 3 /
+Spring 6.1 문서화 방식대로 실행기에 컨텍스트 전파 decorator를 설정해야 합니다:
+
+```java
+executor.setTaskDecorator(new org.springframework.core.task.support.ContextPropagatingTaskDecorator());
+```
+
+decorator가 없으면 trace context가 async 스레드로 전파되지 않아, 그 작업의 커버리지가 같은 store로
+귀속되지 않습니다.
+
 ### traceId → testId 매핑 등록 (C2)
 
 traceId를 사람이 읽는 `FQCN#method` testId에 대응시키려면 제어 엔드포인트를 사용합니다.
@@ -318,7 +364,7 @@ java -cp <pjacoco-agent.jar> io.pjacoco.agent.output.TraceMergeMain \
 
 ```bash
 # 특정 버전 받기 (버전은 Releases 페이지에서 확인)
-wget https://github.com/beltian/parallel-per-test-coverage/releases/download/v2.0.0/pjacoco-agent-2.0.0.jar
+wget https://github.com/beltian/parallel-per-test-coverage/releases/download/v2.1.0/pjacoco-agent-2.1.0.jar
 # 또는 gh CLI로 최신 릴리스에서 받기
 gh release download --repo beltian/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
 # 또는 직접 빌드 (JDK 17+ 필요; 산출물은 Java 8 호환)

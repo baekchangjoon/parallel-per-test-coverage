@@ -1,6 +1,6 @@
 plugins {
     java
-    id("io.github.beltian.pjacoco") version "2.0.0"
+    id("io.github.beltian.pjacoco") version "2.1.0"
 }
 
 repositories {
@@ -8,7 +8,7 @@ repositories {
     mavenCentral()
 }
 
-val pjacocoVersion = "2.0.0"
+val pjacocoVersion = "2.1.0"
 dependencies {
     testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:$pjacocoVersion")
     testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit4:$pjacocoVersion")

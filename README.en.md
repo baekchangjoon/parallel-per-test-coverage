@@ -118,15 +118,15 @@ examples: [`samples/gradle-sample`](samples/gradle-sample) · [`samples/maven-sa
 **Gradle** (`build.gradle.kts`):
 
 ```kotlin
-plugins { id("io.github.beltian.pjacoco") version "2.0.0" }
+plugins { id("io.github.beltian.pjacoco") version "2.1.0" }
 
 pjacoco {
     includes.set(listOf("com.example.*"))
     attachTo.set(listOf("integrationTest"))   // inject the agent + control-url into this test JVM
 }
 dependencies {
-    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.0.0")
-    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-restassured:2.0.0")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.1.0")
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-restassured:2.1.0")
 }
 ```
 
@@ -146,7 +146,7 @@ class OwnerBlackBoxIT {
 
 ```xml
 <plugin>
-  <groupId>io.github.beltian.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>2.0.0</version>
+  <groupId>io.github.beltian.pjacoco</groupId><artifactId>pjacoco-maven-plugin</artifactId><version>2.1.0</version>
   <executions><execution><goals><goal>prepare-agent</goal></goals></execution></executions>
   <configuration><includes><include>com.example.*</include></includes></configuration>
 </plugin>
@@ -181,14 +181,14 @@ below). JUnit 4 is handled by the agent, so it needs no `@Rule` either.
 > [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
 ```kotlin
-plugins { id("io.github.beltian.pjacoco") version "2.0.0" }
+plugins { id("io.github.beltian.pjacoco") version "2.1.0" }
 
 pjacoco {
     attachTo.set(listOf("test"))          // the test task(s) to inject the agent into
     includes.set(listOf("com.example.*")) // the in-process path needs no control-url
 }
 dependencies {
-    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.0.0")   // JUnit 5 applied automatically
+    testImplementation("io.github.beltian.pjacoco:pjacoco-testkit-junit5:2.1.0")   // JUnit 5 applied automatically
     // JUnit 4 works from the agent alone — no dependency, no @Rule
 }
 ```
@@ -241,6 +241,58 @@ and Sonar read it as-is.
   `java -jar jacococli.jar merge shard1/aggregate.exec shard2/aggregate.exec --destfile all.exec`.
 - The aggregate is written from the normal shutdown hook. A hard kill (`kill -9`, etc.) skips it.
 
+## Header conventions (Micrometer/Brave B3 support)
+
+When a tracer (OpenTelemetry or Brave/Spring Cloud Sleuth) is attached to the SUT and the agent option
+`traceKeyAutoCreate=true` is set, pjacoco keys per-test coverage off the tracer's current traceId instead
+of a baggage header, so that coverage from `@Async` methods and other tracer-propagated threads attributes
+back to the request that started them. Outside of that tracer-keyed path — i.e. on the ordinary baggage
+**fallback** — the agent recognizes three inbound header conventions, checked in order (first valid value
+wins):
+
+| Convention | Inbound header | Value format | Typical stack |
+|---|---|---|---|
+| W3C Baggage | `baggage` | `test.id=<id>[,...]` | OTel javaagent, testkit default |
+| Brave/Micrometer field | `test.id` | `<id>` | Boot 3 + `micrometer-tracing-bridge-brave`'s `remote-fields` |
+| legacy Sleuth | `baggage-test.id` | `<id>` | Boot 2 / Sleuth-era stacks |
+
+**Emitting field headers from the testkit.** Pass a `HeaderStyle` (`W3C_BAGGAGE` / `FIELD` / `BOTH`) to
+`enable()` / `baggageFilter()` to choose the outbound wire format. The existing no-arg `enable()` still
+emits `W3C_BAGGAGE` only (no behavior change):
+
+```java
+@BeforeAll
+static void enable() {
+    io.pjacoco.testkit.restassured.PjacocoRestAssured.enable(io.pjacoco.testkit.HeaderStyle.FIELD);
+}
+```
+
+For the SUT to carry that field header through its own app-level propagation (B3), register it as a
+remote field (`application.yml`):
+
+```yaml
+management:
+  tracing:
+    baggage:
+      remote-fields: test.id
+```
+
+**Priority / conflict rule.** When the tracer-keyed path above is active, none of these headers become
+the store key — the key is always the traceId; the header fallback only applies when no tracer context is
+active. Within the fallback, `baggage` (W3C) > `test.id` > `baggage-test.id` — the first header with a
+valid value wins.
+
+**Precondition for async attribution.** For work handed off to `@Async` methods or an executor to be
+attributed to the same tracer-keyed store, the executor needs a context-propagating `TaskDecorator`
+(documented for Boot 3 / Spring 6.1):
+
+```java
+executor.setTaskDecorator(new org.springframework.core.task.support.ContextPropagatingTaskDecorator());
+```
+
+Without it, trace context does not propagate to the async thread, so that work's coverage is not
+attributed to the same store.
+
 ## Using the agent directly (low level)
 
 You can also drive the agent jar with `-javaagent` yourself, without the plugin.
@@ -256,7 +308,7 @@ First get the jar — from [Releases](../../releases/latest), or build it:
 
 ```bash
 # Download a specific version (find the version on the Releases page)
-wget https://github.com/beltian/parallel-per-test-coverage/releases/download/v2.0.0/pjacoco-agent-2.0.0.jar
+wget https://github.com/beltian/parallel-per-test-coverage/releases/download/v2.1.0/pjacoco-agent-2.1.0.jar
 # Or grab the latest release with the gh CLI
 gh release download --repo beltian/parallel-per-test-coverage --pattern 'pjacoco-agent-*.jar'
 # Or build it (JDK 17+ to run Gradle; the artifact targets Java 8)
