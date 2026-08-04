@@ -191,8 +191,8 @@
 | REQ-MM-005 | 빈 값 폴스루 | BaggageHeadersTest#emptyValueFallsThrough/#allEmptyGoesMissingPath | IT | 🟢 green |
 | REQ-MM-006 | 폴백 키 store 생성 규칙 | StoreCreationRuleIT#baggageKeySkipsAutoCreate/#servletTracerKeyAutoCreates/#scopeBridgeKeyAutoCreates | IT | 🟢 green |
 | REQ-MM-007 | 카운터 3종 + 파티션 불변식 | BaggageHeadersTest#countersPartitionFallbackActivations/#countersAppearInSummary | IT | 🟢 green |
-| REQ-MM-008 | HeaderStyle FIELD emit | HeaderStyleTest#fieldEmitsFieldHeaderOnly/#bothEmitsBoth/#baggageFilterStyleOverload + MmDistributedFieldE2E#twoHopSameTestId(교차) | IT+E2E | 🔴 planned |
-| REQ-MM-009 | `enable()` 무회귀 | HeaderStyleTest#noArgEnableKeepsW3c | IT | 🔴 planned |
+| REQ-MM-008 | HeaderStyle FIELD emit | HeaderStyleTest#fieldEmitsFieldHeaderOnly/#bothEmitsBoth/#baggageFilterStyleOverload + MmDistributedFieldE2E#twoHopSameTestId(교차) | IT+E2E | 🟢 green |
+| REQ-MM-009 | `enable()` 무회귀 | HeaderStyleTest#noArgEnableKeepsW3c | IT | 🟢 green |
 | REQ-MM-010 | 프록시 무조건 제외 | ProxyExclusionTest#transformReturnsNullForJdkProxy/#explicitIncludesCannotReenable | IT | 🟢 green |
 | REQ-MM-011 | Boot 3 기본값 부팅 성공 | MmBoot3BootE2E#bootsWithDefaultIncludes | E2E | 🔴 planned |
 | REQ-MM-012 | 트레이서 경로 동기+async | MmTracerPathE2E#b3TraceIdKeyedStore/#asyncAttributedToSameStore | E2E | 🔴 planned |
