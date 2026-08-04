@@ -41,6 +41,10 @@ dependencies {
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // Parses .exec files via ExecutionDataReader/Analyzer (MmTracerPathE2E) — same version the agent
+    // module embeds (agent/build.gradle.kts jacocoVersion default), unshaded here since this test
+    // reads plain jacoco-format output rather than linking against the agent's relocated copy.
+    testImplementation("org.jacoco:org.jacoco.core:0.8.12")
 }
 
 tasks.test {
