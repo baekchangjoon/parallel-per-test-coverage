@@ -233,10 +233,10 @@
 | REQ-MM-012 | 트레이서 경로 동기+async | MmTracerPathE2E#b3TraceIdKeyedStore/#asyncAttributedToSameStore | E2E | 🟡 partial (테스트 2건 green; CI 전용 잡 배선 기준은 Task 10 대기) |
 | REQ-MM-013 | 분산 2-hop FIELD | MmDistributedFieldE2E#twoHopSameTestId | E2E | 🟢 green |
 | REQ-MM-014 | 문서화 | (PR 문서동기화 게이트 — README ko/en + 릴리스 노트 검토) | doc | 🔴 planned |
-| REQ-MM-015 | 표면 불변 제약 | AgentOptionsParseWarningsTest#knownKeysSetIsFrozenForThisCycle + HotPathGuardTest#recordCoverageSourceUnchanged + jdk8-compat CI | IT+CI | 🟢 green |
+| REQ-MM-015 | 표면 불변 제약 | AgentOptionsParseWarningsTest#knownKeysSetIsFrozenForThisCycle + HotPathGuardTest#recordCoverageSourceUnchanged + jdk8-compat CI | IT+CI | 🟡 partial ((a)(b) 테스트 green; (c) jdk8-compat CI green 확인 시 🟢) |
 | (공통) | MM E2E CI 배선(REQ-MM-011·012·013) | CI workflow diff 검토 — mm-e2e 잡 배선 완료(Task 10), PR CI green 확인 시 🟢(코드 리뷰 게이트) | review | 🔴 planned |
 
-Coverage: 14/16 green (87.5%) — target 100% (대상: Must 13 + Should 3, 연기 없음 / Won't 0)
+Coverage: 13/16 green (81.25%) — target 100% (대상: Must 13 + Should 3, 연기 없음 / Won't 0)
 
 ## 테스트 배치·환경 (매트릭스 각주)
 

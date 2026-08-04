@@ -43,17 +43,25 @@ class AgentOptionsParseWarningsTest {
     }
 
     @Test
-    void knownKeysSetIsFrozenForThisCycle() {
+    void knownKeysSetIsFrozenForThisCycle() throws Exception {
         // REQ-MM-015(a): Surface-invariant guard — no new agent options this cycle.
-        // Any attempt to add a new option will trigger a parseWarning, forcing this test
-        // to fail and requiring an update to the requirements spec before merging.
+        // Pin the cardinality of AgentOptions.KNOWN_KEYS (private static final Set<String>).
+        // Any attempt to add a 24th key will fail this assertion and force spec review.
 
-        // All existing options parse without warning
+        // Reflection: read private KNOWN_KEYS field and assert its size is exactly 23
+        java.lang.reflect.Field knownKeysField = AgentOptions.class.getDeclaredField("KNOWN_KEYS");
+        knownKeysField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Set<String> knownKeys = (java.util.Set<String>) knownKeysField.get(null);
+        assertEquals(23, knownKeys.size(),
+                "KNOWN_KEYS cardinality must remain 23 this cycle; adding new options requires spec update");
+
+        // Behavioral guard: all existing keys parse without warning
         assertTrue(AgentOptions.parse("destdir=/x,control=false").parseWarnings().isEmpty(),
-                "existing options must parse without warnings");
+                "existing documented options must parse without warnings");
 
-        // Any new/unknown option produces a warning
+        // Behavioral guard: any unknown key produces a warning
         assertEquals(1, AgentOptions.parse("someNewOption=1").parseWarnings().size(),
-                "new options must be rejected with a parse warning; add to requirements spec if intentional");
+                "unknown options are rejected with a parse warning; new ones require spec review");
     }
 }
