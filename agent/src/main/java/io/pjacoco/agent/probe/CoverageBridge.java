@@ -32,6 +32,7 @@ public final class CoverageBridge {
 
     /** Hot path (per probe hit). MUST be cheap and MUST NEVER throw into application code. */
     public static void recordCoverage(Class<?> clazz, long classId, int probeId) {
+        // HOT-PATH-BEGIN
         try {
             TestStore store = CoverageContext.get();
             if (store == null) {
@@ -49,6 +50,7 @@ public final class CoverageBridge {
             if (m != null) m.swallowedExceptions.incrementAndGet();
             // swallow: coverage loss is acceptable, an app crash is not
         }
+        // HOT-PATH-END
     }
 
     public static void clear() { CoverageContext.clear(); }

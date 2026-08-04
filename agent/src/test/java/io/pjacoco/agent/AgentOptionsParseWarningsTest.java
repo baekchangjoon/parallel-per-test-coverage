@@ -41,4 +41,19 @@ class AgentOptionsParseWarningsTest {
         assertEquals(java.util.Collections.emptyList(), options.parseWarnings(),
                 "every documented option must be in the known-keys set");
     }
+
+    @Test
+    void knownKeysSetIsFrozenForThisCycle() {
+        // REQ-MM-015(a): Surface-invariant guard — no new agent options this cycle.
+        // Any attempt to add a new option will trigger a parseWarning, forcing this test
+        // to fail and requiring an update to the requirements spec before merging.
+
+        // All existing options parse without warning
+        assertTrue(AgentOptions.parse("destdir=/x,control=false").parseWarnings().isEmpty(),
+                "existing options must parse without warnings");
+
+        // Any new/unknown option produces a warning
+        assertEquals(1, AgentOptions.parse("someNewOption=1").parseWarnings().size(),
+                "new options must be rejected with a parse warning; add to requirements spec if intentional");
+    }
 }
