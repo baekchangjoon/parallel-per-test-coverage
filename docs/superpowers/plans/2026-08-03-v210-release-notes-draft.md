@@ -30,7 +30,7 @@ no-arg 오버로드는 그대로 `W3C_BAGGAGE`로 동작).
   조합 — 이 옵션은 트레이서 스택 대상이라 폴백 경로 자체가 희귀 케이스).
 - **JVM이 생성하는 프록시·리플렉션 액세서 클래스는 항상 계측 대상에서 제외된다.**
   `jdk.proxy*`/`com.sun.proxy.*`(JDK 동적 프록시)와 `jdk.internal.reflect.GeneratedConstructorAccessor*`
-  등(JVM이 특수 로더로 생성하는 리플렉션 액세서)이 자기-제외(`io.pjacoco.`/`org.jacoco.`)와 같은
+  등(JVM이 특수 로더로 생성하는 리플렉션 액세서)이 자기-제외(`io.pjacoco.`/`org.jacoco.`/`net.bytebuddy.`)와 같은
   층위의 무조건 pre-check로 빠진다 — 사용자 `includes=`로도 재활성화할 수 없다. Spring Boot 3 앱을
   기본 `includes=*`로 계측하면 이 클래스들이 계측되어 `IllegalAccessError`로 부팅이 실패하던 결함의
   수정이다. **영향**: 동적 프록시·리플렉션 액세서는 애초에 커버리지 대상으로 의미가 없는 생성 코드라,

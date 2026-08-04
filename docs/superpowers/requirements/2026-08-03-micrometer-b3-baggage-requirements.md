@@ -234,14 +234,14 @@
 | REQ-MM-013 | 분산 2-hop FIELD | MmDistributedFieldE2E#twoHopSameTestId | E2E | 🟢 green |
 | REQ-MM-014 | 문서화 | README ko/en "헤더 규약(Micrometer/Brave B3 지원)" 절 + `docs/superpowers/plans/2026-08-03-v210-release-notes-draft.md` | doc | 🟢 green (Task 12 작성 완료 — 최종 확인은 PR 문서동기화 게이트) |
 | REQ-MM-015 | 표면 불변 제약 | AgentOptionsParseWarningsTest#knownKeysSetIsFrozenForThisCycle + HotPathGuardTest#recordCoverageSourceUnchanged + jdk8-compat CI | IT+CI | 🟡 partial ((a)(b) 테스트 green; (c) jdk8-compat CI green 확인 시 🟢) |
-| (공통) | MM E2E CI 배선(REQ-MM-011·012·013) | CI workflow diff 검토 — mm-e2e 잡 배선 완료(Task 10), PR CI green 확인 시 🟢(코드 리뷰 게이트) | review | 🔴 planned |
+| (공통) | MM E2E CI 배선(REQ-MM-011·012·013) | CI workflow diff 검토 — mm-e2e 잡 배선 완료(Task 10) / PR CI green 확인 시 🟢(코드 리뷰 게이트) | review | 🔴 wired |
 
 Coverage: 14/16 green (87.5%) — target 100% (대상: Must 13 + Should 3, 연기 없음 / Won't 0)
 
 ## 테스트 배치·환경 (매트릭스 각주)
 
 - **모듈 배치**: `BaggageHeadersTest`/`StoreCreationRuleIT`/`ProxyExclusionTest`/
-  `KnownKeysSnapshotTest`/`HotPathGuardTest` = `agent` 모듈(단위/IT — Java 8 하니스로 충분).
+  `AgentOptionsParseWarningsTest#knownKeysSetIsFrozenForThisCycle`/`HotPathGuardTest` = `agent` 모듈(단위/IT — Java 8 하니스로 충분).
   `MmBaggageHeadersE2E` = `agent`의 기존 e2e 하니스(Jetty, 트레이서 불필요 — JDK 17 불요).
   `MmTracerPathE2E`/`MmBoot3BootE2E`/`MmDistributedFieldE2E` = **신규 독립 빌드
   `e2e-mm-boot3/`**(toolchain 17, 전용 CI 잡) — design §4.5의 격리 근거.

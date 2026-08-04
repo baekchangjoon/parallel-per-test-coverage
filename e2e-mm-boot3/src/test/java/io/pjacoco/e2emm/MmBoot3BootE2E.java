@@ -48,6 +48,7 @@ class MmBoot3BootE2E {
             // Teardown on every exit path (success, assertion failure, or exception above).
             app.destroyForcibly();
             app.waitFor(10, TimeUnit.SECONDS);
+            Files.deleteIfExists(log.toPath());
         }
     }
 
