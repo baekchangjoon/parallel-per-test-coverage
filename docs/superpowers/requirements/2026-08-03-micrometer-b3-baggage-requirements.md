@@ -184,13 +184,13 @@
 
 | REQ-ID | 요구사항 | 수용 테스트 | Level | Status |
 |--------|----------|-------------|-------|--------|
-| REQ-MM-001 | `test.id` 필드 헤더 인식 | MmBaggageHeadersE2E#fieldHeaderProducesPerTestExec | E2E | 🟡 red |
-| REQ-MM-002 | `baggage-test.id` legacy 헤더 | MmBaggageHeadersE2E#legacyHeaderProducesPerTestExec | E2E | 🟡 red |
-| REQ-MM-003 | W3C 무회귀 + 파서 분리 | MmBaggageHeadersE2E#w3cBaggageUnchanged + BaggageHeadersTest#w3cParserOnlyForBaggageHeader | E2E+IT | 🔴 planned |
-| REQ-MM-004 | 헤더 우선순위 계약 | BaggageHeadersTest#priority3Way/#pairwiseAll/#malformedBaggageFallsThrough + MmBaggageHeadersE2E#conflictW3cWins | IT+E2E | 🔴 planned |
-| REQ-MM-005 | 빈 값 폴스루 | BaggageHeadersTest#emptyValueFallsThrough/#allEmptyGoesMissingPath | IT | 🔴 planned |
+| REQ-MM-001 | `test.id` 필드 헤더 인식 | MmBaggageHeadersE2E#fieldHeaderProducesPerTestExec | E2E | 🟢 green |
+| REQ-MM-002 | `baggage-test.id` legacy 헤더 | MmBaggageHeadersE2E#legacyHeaderProducesPerTestExec | E2E | 🟢 green |
+| REQ-MM-003 | W3C 무회귀 + 파서 분리 | MmBaggageHeadersE2E#w3cBaggageUnchanged + BaggageHeadersTest#w3cParserOnlyForBaggageHeader | E2E+IT | 🟢 green |
+| REQ-MM-004 | 헤더 우선순위 계약 | BaggageHeadersTest#priority3Way/#pairwiseAll/#malformedBaggageFallsThrough + MmBaggageHeadersE2E#conflictW3cWins | IT+E2E | 🟢 green |
+| REQ-MM-005 | 빈 값 폴스루 | BaggageHeadersTest#emptyValueFallsThrough/#allEmptyGoesMissingPath | IT | 🟢 green |
 | REQ-MM-006 | 폴백 키 store 생성 규칙 | StoreCreationRuleIT#baggageKeySkipsAutoCreate/#servletTracerKeyAutoCreates/#scopeBridgeKeyAutoCreates | IT | 🔴 planned |
-| REQ-MM-007 | 카운터 3종 + 파티션 불변식 | BaggageHeadersTest#countersPartitionFallbackActivations/#countersAppearInSummary | IT | 🔴 planned |
+| REQ-MM-007 | 카운터 3종 + 파티션 불변식 | BaggageHeadersTest#countersPartitionFallbackActivations/#countersAppearInSummary | IT | 🟢 green |
 | REQ-MM-008 | HeaderStyle FIELD emit | HeaderStyleTest#fieldEmitsFieldHeaderOnly/#bothEmitsBoth/#baggageFilterStyleOverload + MmDistributedFieldE2E#twoHopSameTestId(교차) | IT+E2E | 🔴 planned |
 | REQ-MM-009 | `enable()` 무회귀 | HeaderStyleTest#noArgEnableKeepsW3c | IT | 🔴 planned |
 | REQ-MM-010 | 프록시 무조건 제외 | ProxyExclusionTest#transformReturnsNullForJdkProxy/#explicitIncludesCannotReenable | IT | 🔴 planned |
@@ -201,7 +201,7 @@
 | REQ-MM-015 | 표면 불변 제약 | KnownKeysSnapshotTest + HotPathGuardTest + jdk8-compat CI | IT+CI | 🔴 planned |
 | (공통) | MM E2E CI 배선(REQ-MM-011·012·013) | CI workflow diff 검토 — `e2e-mm-boot3` 전용 JDK 17 잡 신설 확인(코드 리뷰 게이트) | review | 🔴 planned |
 
-Coverage: 0/15 green (0%) — target 100% (대상: Must 12 + Should 3, 연기 없음 / Won't 0)
+Coverage: 6/15 green (40%) — target 100% (대상: Must 12 + Should 3, 연기 없음 / Won't 0)
 
 ## 테스트 배치·환경 (매트릭스 각주)
 

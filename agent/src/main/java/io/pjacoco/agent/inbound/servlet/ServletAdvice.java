@@ -26,11 +26,15 @@ import net.bytebuddy.asm.Advice;
  * <ol>
  *   <li>{@link OtelTestIdSource} — reads the current OTel trace ID from the thread context.</li>
  *   <li>{@link BraveTestIdSource} — reads the current Brave trace ID from the thread context.</li>
- *   <li>Local/baggage fallback — reads {@code test.id} from the {@code baggage} header directly.</li>
+ *   <li>Local/baggage fallback — reads {@code test.id} from one of three headers, in priority
+ *       order: W3C {@code baggage}, Brave/Micrometer {@code test.id} field header, legacy Sleuth
+ *       {@code baggage-test.id} field header (REQ-MM-004). See {@link #fallbackTestId}.</li>
  * </ol>
  * In a no-tracer environment the first two sources return {@code null} (reflective Class.forName
- * throws → best-effort null), so activation falls back to the baggage header.  Each fallback
- * activation increments {@link Metrics#fallbackActivations} (REQ-019).
+ * throws → best-effort null), so activation falls back to the baggage headers.  Each fallback
+ * activation increments {@link Metrics#fallbackActivations} (REQ-019), and the winning header type
+ * increments one of {@link Metrics#testIdFromW3cBaggage}, {@link Metrics#testIdFromFieldHeader},
+ * {@link Metrics#testIdFromLegacyFieldHeader} (REQ-MM-007).
  *
  * <p>{@link #deactivate} unconditionally clears the {@link CoverageContext} so that thread-pool
  * workers never inherit a previous request's store (REQ-001 thread hygiene).  Async attribution
@@ -70,13 +74,13 @@ public final class ServletAdvice {
             // Try tracer sources first (OTel, Brave).
             String key = new CoverageKeyResolver(traceSources).resolve();
 
-            // If no tracer context is active, fall back to the baggage header (REQ-007).
+            // If no tracer context is active, fall back to the baggage headers (REQ-007 + REQ-MM-004).
             if (key == null) {
-                String local = BaggageParser.testId(header(request, "baggage"));
+                String local = fallbackTestId(request);
                 if (local != null) {
                     key = local;
                     Metrics m = metrics;
-                    if (m != null) m.fallbackActivations.incrementAndGet();  // REQ-019
+                    if (m != null) m.fallbackActivations.incrementAndGet();  // REQ-019 불변식: 3종 공통
                 }
             }
 
@@ -105,6 +109,35 @@ public final class ServletAdvice {
 
     public static void deactivate() {
         try { CoverageContext.clear(); } catch (Throwable ignored) {}
+    }
+
+    /** 폴백 헤더 순서(REQ-MM-004): W3C baggage → Brave/Micrometer 필드 → legacy Sleuth. */
+    static String fallbackTestId(Object request) {
+        String w3c = BaggageParser.testId(header(request, "baggage"));
+        if (w3c != null) {
+            Metrics m = metrics;
+            if (m != null) m.testIdFromW3cBaggage.incrementAndGet();
+            return w3c;
+        }
+        String field = trimToNull(header(request, "test.id"));
+        if (field != null) {
+            Metrics m = metrics;
+            if (m != null) m.testIdFromFieldHeader.incrementAndGet();
+            return field;
+        }
+        String legacy = trimToNull(header(request, "baggage-test.id"));
+        if (legacy != null) {
+            Metrics m = metrics;
+            if (m != null) m.testIdFromLegacyFieldHeader.incrementAndGet();
+            return legacy;
+        }
+        return null;
+    }
+
+    private static String trimToNull(String v) {
+        if (v == null) return null;
+        String t = v.trim();
+        return t.isEmpty() ? null : t;                    // REQ-MM-005: 빈 값은 매치 아님
     }
 
     private static String header(Object request, String name) {
