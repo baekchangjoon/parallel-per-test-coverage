@@ -230,13 +230,13 @@
 | REQ-MM-010 | 프록시 무조건 제외 | ProxyExclusionTest#transformReturnsNullForJdkProxy/#explicitIncludesCannotReenable | IT | 🟢 green |
 | REQ-MM-011 | Boot 3 기본값 부팅 성공 | MmBoot3BootE2E#bootsWithDefaultIncludes | E2E | 🟢 green |
 | REQ-MM-016 | JVM 생성 클래스 무조건 제외 | ProxyExclusionTest#transformReturnsNullForJdkInternalReflectAccessor/#explicitIncludesCannotReenableJdkInternalReflect | IT | 🟢 green |
-| REQ-MM-012 | 트레이서 경로 동기+async | MmTracerPathE2E#b3TraceIdKeyedStore/#asyncAttributedToSameStore | E2E | 🟡 partial (테스트 2건 green; CI 전용 잡 배선 기준은 Task 10 대기) |
+| REQ-MM-012 | 트레이서 경로 동기+async | MmTracerPathE2E#b3TraceIdKeyedStore/#asyncAttributedToSameStore | E2E | 🟢 green (PR #38 CI `mm-e2e` 잡 green 확인 — 2026-08-05) |
 | REQ-MM-013 | 분산 2-hop FIELD | MmDistributedFieldE2E#twoHopSameTestId | E2E | 🟢 green |
 | REQ-MM-014 | 문서화 | README ko/en "헤더 규약(Micrometer/Brave B3 지원)" 절 + `docs/superpowers/plans/2026-08-03-v210-release-notes-draft.md` | doc | 🟢 green (Task 12 작성 완료 — 최종 확인은 PR 문서동기화 게이트) |
-| REQ-MM-015 | 표면 불변 제약 | AgentOptionsParseWarningsTest#knownKeysSetIsFrozenForThisCycle + HotPathGuardTest#recordCoverageSourceUnchanged + jdk8-compat CI | IT+CI | 🟡 partial ((a)(b) 테스트 green; (c) jdk8-compat CI green 확인 시 🟢) |
-| (공통) | MM E2E CI 배선(REQ-MM-011·012·013) | CI workflow diff 검토 — mm-e2e 잡 배선 완료(Task 10) / PR CI green 확인 시 🟢(코드 리뷰 게이트) | review | 🔴 wired |
+| REQ-MM-015 | 표면 불변 제약 | AgentOptionsParseWarningsTest#knownKeysSetIsFrozenForThisCycle + HotPathGuardTest#recordCoverageSourceUnchanged + jdk8-compat CI | IT+CI | 🟢 green ((a)(b) 테스트 green + (c) PR #38 CI `jdk8-compat` 잡 green 확인 — 2026-08-05) |
+| (공통) | MM E2E CI 배선(REQ-MM-011·012·013) | CI workflow diff 검토 — mm-e2e 잡 배선 완료(Task 10) | review | 🟢 green (PR #38 CI `mm-e2e` 잡 green 확인 — 2026-08-05) |
 
-Coverage: 14/16 green (87.5%) — target 100% (대상: Must 13 + Should 3, 연기 없음 / Won't 0)
+Coverage: 16/16 green (100%) — target 100% 달성 (대상: Must 13 + Should 3, 연기 없음 / Won't 0; PR #38 CI green으로 확정)
 
 ## 테스트 배치·환경 (매트릭스 각주)
 
