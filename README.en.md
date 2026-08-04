@@ -77,19 +77,10 @@ Test harness                          Target app JVM  (-javaagent:pjacoco-agent.
 > the four testkits, and the maven-plugin) resolve straight from Maven Central — **Maven users can
 > copy the examples below verbatim.** No extra repository configuration needed.
 >
-> ⏳ **Only the Gradle plugin awaits Plugin Portal approval:** new plugins go through a manual review
-> by Gradle engineers. Until it lands, `plugins { id("io.github.beltian.pjacoco") }` does not resolve
-> from the Portal, so Gradle users need a local install of just the plugin (the libraries still come
-> from Central):
+> ✅ **Published on the Gradle Plugin Portal:** `plugins { id("io.github.beltian.pjacoco") version "2.0.0" }`
+> resolves straight from the Portal — copy the examples below verbatim, no extra setup.
 >
-> ```bash
-> ./gradlew :gradle-plugin:publishToMavenLocal   # plugin only, once, after cloning the source
-> ```
-> plus `pluginManagement { repositories { mavenLocal(); gradlePluginPortal() } }` in the consumer's
-> `settings.gradle.kts` (see [`samples/gradle-sample`](samples/gradle-sample)). Alternative: skip the
-> plugin and attach Central's agent jar manually via `-javaagent`. **This notice is removed once the
-> plugin is approved.**
->
+
 > (To install everything from source in one step: `./scripts/install-local.sh`.)
 >
 > **If building from source is inconvenient**, v1.3.0+ [GitHub Releases](../../releases/latest) attach the
