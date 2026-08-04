@@ -184,8 +184,8 @@
 
 | REQ-ID | 요구사항 | 수용 테스트 | Level | Status |
 |--------|----------|-------------|-------|--------|
-| REQ-MM-001 | `test.id` 필드 헤더 인식 | MmBaggageHeadersE2E#fieldHeaderProducesPerTestExec | E2E | 🔴 planned |
-| REQ-MM-002 | `baggage-test.id` legacy 헤더 | MmBaggageHeadersE2E#legacyHeaderProducesPerTestExec | E2E | 🔴 planned |
+| REQ-MM-001 | `test.id` 필드 헤더 인식 | MmBaggageHeadersE2E#fieldHeaderProducesPerTestExec | E2E | 🟡 red |
+| REQ-MM-002 | `baggage-test.id` legacy 헤더 | MmBaggageHeadersE2E#legacyHeaderProducesPerTestExec | E2E | 🟡 red |
 | REQ-MM-003 | W3C 무회귀 + 파서 분리 | MmBaggageHeadersE2E#w3cBaggageUnchanged + BaggageHeadersTest#w3cParserOnlyForBaggageHeader | E2E+IT | 🔴 planned |
 | REQ-MM-004 | 헤더 우선순위 계약 | BaggageHeadersTest#priority3Way/#pairwiseAll/#malformedBaggageFallsThrough + MmBaggageHeadersE2E#conflictW3cWins | IT+E2E | 🔴 planned |
 | REQ-MM-005 | 빈 값 폴스루 | BaggageHeadersTest#emptyValueFallsThrough/#allEmptyGoesMissingPath | IT | 🔴 planned |
