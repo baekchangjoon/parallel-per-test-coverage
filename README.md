@@ -73,17 +73,10 @@ JaCoCo는 **per-test 분리를 위해 설계되지 않았습니다.** 런타임 
 > maven-plugin)는 Maven Central에서 바로 resolve됩니다 — **Maven 사용자는 아래 예시를 그대로 복사해
 > 쓰면 됩니다.** 별도 저장소 설정 불필요.
 >
-> ⏳ **Gradle 플러그인만 Plugin Portal 승인 대기 중:** 신규 플러그인은 Gradle 엔지니어의 수동 승인을
-> 거칩니다. 승인 전까지 `plugins { id("io.github.beltian.pjacoco") }`는 Portal에서 resolve되지 않으므로,
-> Gradle 사용자는 임시로 플러그인만 로컬 설치가 필요합니다(라이브러리는 Central에서 받아집니다):
+> ✅ **Gradle Plugin Portal 공개 완료:** `plugins { id("io.github.beltian.pjacoco") version "2.0.0" }`
+> 가 Portal에서 바로 resolve됩니다 — 별도 설정 없이 아래 예시를 그대로 사용하세요.
 >
-> ```bash
-> ./gradlew :gradle-plugin:publishToMavenLocal   # 플러그인만 mavenLocal에 (소스 클론 후 1회)
-> ```
-> + 소비 프로젝트 `settings.gradle.kts`에 `pluginManagement { repositories { mavenLocal(); gradlePluginPortal() } }`
-> (예: [`samples/gradle-sample`](samples/gradle-sample)). 대안: 플러그인 없이 Central의 agent jar를 수동
-> `-javaagent`로 부착해도 됩니다. **승인 완료 시 이 안내는 제거됩니다.**
->
+
 > (소스 전체를 로컬 설치하려면 `./scripts/install-local.sh` — agent·testkit·플러그인 2종을 한 번에 설치)
 >
 > **소스 빌드가 어렵다면**, v1.3.0+ [GitHub Release](../../releases/latest)에 **agent·testkit(4종)·maven-plugin
@@ -169,8 +162,8 @@ JUnit 5 익스텐션이 스위트 전체에 자동 적용됩니다(애너테이�
 `junit-platform.properties` 로 켜며, 아래 "Maven에서 JUnit 5 자동 등록" 에서 다룹니다. JUnit 4는
 에이전트가 처리하므로 `@Rule` 도 필요 없습니다.
 
-> 라이브러리·maven-plugin은 Maven Central에서 받아집니다. Gradle 플러그인만 Portal 승인 대기 중이라
-> 당분간 `:gradle-plugin:publishToMavenLocal` 로컬 설치가 필요합니다(위 "빠른 시작" 안내 참고).
+> 라이브러리·maven-plugin은 Maven Central에서, Gradle 플러그인은 Plugin Portal에서 받아집니다 —
+> 로컬 설치 불필요.
 
 ```kotlin
 plugins { id("io.github.beltian.pjacoco") version "2.0.0" }
