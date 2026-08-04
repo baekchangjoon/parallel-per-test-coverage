@@ -142,8 +142,10 @@ public final class ProbeInstrumentation {
                     || dotted.startsWith("net.bytebuddy.") || dotted.startsWith("org.objectweb.asm.")
                     // JDK dynamic proxies: generated code in dynamic modules; instrumenting them
                     // injects a $jacocoInit that crosses JPMS read edges -> IllegalAccessError at
-                    // boot (Boot 3, discovered by the 2026-08-03 spike). Unconditional, like the
-                    // self-excludes above — user includes=/excludes= cannot re-enable it.
+                    // boot (Boot 3, discovered by the 2026-08-03 spike). Failure occurs at class
+                    // initialization (after instrument() succeeds), so the only reliable observable is
+                    // this pre-check. Unconditional, like the self-excludes above — user
+                    // includes=/excludes= cannot re-enable it.
                     || dotted.startsWith("jdk.proxy") || dotted.startsWith("com.sun.proxy.")) {
                 return null;                                                 // never instrument self/embedded libs
             }

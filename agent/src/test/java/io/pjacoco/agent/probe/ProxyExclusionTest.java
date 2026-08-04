@@ -1,6 +1,5 @@
 package io.pjacoco.agent.probe;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import io.pjacoco.agent.AgentOptions;
@@ -40,8 +39,9 @@ class ProxyExclusionTest {
     }
 
     /** Discovery method: Boot 3 failed to boot when jdk.proxy3 was instrumented (IllegalAccessError: $jacocoInit).
-     *  The transform's return value is direct asserted — a test-level observable that excludes must
-     *  catch instrumentation before bytecode is returned. */
+     *  instrumentFailures doesn't catch this class of bug because instrumentation itself succeeds — the
+     *  failure is a runtime IllegalAccessError at class initialization (after instrument() already returned
+     *  bytecode), so the only reliable observable is transform()'s return value at the pre-check layer. */
     @Test void transformReturnsNullForJdkProxy() throws IOException {
         assertNull(transformer("includes=*").transform(
                 ProxyExclusionTest.class.getClassLoader(), "jdk/proxy3/$Proxy42", null, null, classBytes()),
