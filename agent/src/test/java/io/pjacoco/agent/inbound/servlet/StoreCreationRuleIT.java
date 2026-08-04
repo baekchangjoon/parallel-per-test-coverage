@@ -1,5 +1,6 @@
 package io.pjacoco.agent.inbound.servlet;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -39,9 +40,14 @@ class StoreCreationRuleIT {
         ServletAdvice.traceSources = DEFAULT_TRACE_SOURCES;
     }
 
-    private TestStoreRegistry strictAutoCreateRegistry(Path dir) {
+    /**
+     * Shares {@code metrics} with the registry (rather than each constructing/holding its own) so
+     * that tests can assert on registry-internal accounting (e.g. {@code rejectedUnregistered})
+     * through the same instance bound to {@link ServletAdvice#metrics}.
+     */
+    private TestStoreRegistry strictAutoCreateRegistry(Path dir, Metrics metrics) {
         final AtomicLong clock = new AtomicLong(1L);
-        return new TestStoreRegistry(dir, new ExecWriter(), new Metrics(), new AgentLog(),
+        return new TestStoreRegistry(dir, new ExecWriter(), metrics, new AgentLog(),
                 /* lenient= */ false, 100, new java.util.function.LongSupplier() {
                     public long getAsLong() { return clock.get(); }
                 }, /* traceKeyAutoCreate= */ true);
@@ -66,21 +72,25 @@ class StoreCreationRuleIT {
     /** Given traceKeyAutoCreate=true + strict, an un-started baggage-derived key must not auto-create. */
     @Test
     void baggageKeySkipsAutoCreate(@TempDir Path dir) {
-        TestStoreRegistry reg = strictAutoCreateRegistry(dir);
+        // Shared instance: the registry's strict-rejection accounting must be observable through
+        // the same Metrics bound to ServletAdvice.metrics (REQ-MM-006's "기존 strict 거부 회계를 따른다").
+        Metrics metrics = new Metrics();
+        TestStoreRegistry reg = strictAutoCreateRegistry(dir, metrics);
         ServletAdvice.registry = reg;
-        ServletAdvice.metrics = new Metrics();
+        ServletAdvice.metrics = metrics;
         // No tracer scope active in this unit test environment -> resolves via baggage fallback only.
 
         ServletAdvice.activate(requestWithHeaders(map("test.id", "GHOST")));
 
         assertNull(reg.peek("GHOST"), "un-started baggage-derived key must not be auto-created (strict contract)");
         assertNull(CoverageContext.get(), "no store should have been bound to the context");
+        assertEquals(1, metrics.rejectedUnregistered.get(), "strict rejection must be accounted");
     }
 
     /** Given the same flag, the tracer-source branch of ServletAdvice.activate() keeps auto-create. */
     @Test
     void servletTracerKeyAutoCreates(@TempDir Path dir) {
-        TestStoreRegistry reg = strictAutoCreateRegistry(dir);
+        TestStoreRegistry reg = strictAutoCreateRegistry(dir, new Metrics());
         ServletAdvice.registry = reg;
         ServletAdvice.metrics = new Metrics();
         ServletAdvice.traceSources = Collections.<TestIdSource>singletonList(new TestIdSource() {
@@ -95,7 +105,7 @@ class StoreCreationRuleIT {
     /** Given the same flag, TraceScopeBridge's scope-enter path (async weave) keeps auto-create. */
     @Test
     void scopeBridgeKeyAutoCreates(@TempDir Path dir) {
-        TestStoreRegistry reg = strictAutoCreateRegistry(dir);
+        TestStoreRegistry reg = strictAutoCreateRegistry(dir, new Metrics());
         TraceScopeBridge bridge = new TraceScopeBridge(reg, new CoverageKeyResolver(DEFAULT_TRACE_SOURCES));
 
         Object scopeId = new Object();
