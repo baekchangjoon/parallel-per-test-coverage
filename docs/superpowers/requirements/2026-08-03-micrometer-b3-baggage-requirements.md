@@ -181,6 +181,15 @@
   `HeaderStyle.FIELD`의 `test.id: D1` 헤더는 커버리지 키에 관여하지 않지만, B의 `/sink` 헤더 덤프로
   실제 2-hop 와이어 전파(REQ-MM-008 E2E 교차)를 별도로 검증한다. 매트릭스 수용 테스트는 변경 없음
   (`MmDistributedFieldE2E#twoHopSameTestId`).
+- **역전파 2(리뷰 반영):** 병합 수용기준 "SUT-A에만 있는 클래스와 SUT-B에만 있는 클래스가 모두
+  병합 결과에 존재"도 문자 그대로는 아니다 — spike 앱에는 `/sink` 전용 클래스가 없다(핸들러가
+  `SpikeController` 안의 inline 메서드). A만의 클래스(`spike/DownstreamWorker`, "covered ONLY by
+  /call-downstream" — 클래스 레벨)는 그대로 성립하지만, B쪽 고유 기여는 **같은
+  `SpikeController` 클래스 안의 메서드 단위**(`sink()` vs `callDownstream()`)로만 표현 가능하다.
+  이는 SUT 구조상 제약(테스트가 아니라 실제 앱에 B 전용 클래스가 없음)이며, 병합이
+  last-writer-wins로 한쪽을 덮어쓰지 않고 양쪽 고유 기여를 모두 보존한다는 수용기준의 실질은
+  메서드 단위 단언으로도 동일하게 충족된다고 판단해 그대로 수용한다. 매트릭스 수용 테스트는
+  변경 없음(`MmDistributedFieldE2E#twoHopSameTestId`).
 
 ### REQ-MM-014 — 문서화 (헤더 규약 표 + HeaderStyle + async 전제)
 - 유형: Functional / 우선순위: Should
