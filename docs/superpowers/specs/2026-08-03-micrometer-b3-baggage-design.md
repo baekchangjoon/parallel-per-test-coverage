@@ -196,3 +196,7 @@ test.id를 테스트로 귀속하려면 기존 C2 trace/map 매핑을 쓴다 —
 설정과 병합되지 않아** 사용자가 excludes를 지정해도 재활성화되지 않는다. 검증은 MM-E2E-4(§4.5).
 기존 instrumentFailures 신호로는 잡히지 않는 부류(계측은 성공, 런타임에 터짐)라는 점을 테스트
 주석에 명시.
+
+**보충 발견(REQ-MM-016):** Task 7의 MmBoot3BootE2E에서 동일한 실패 패턴이 `jdk.internal.reflect.GeneratedConstructorAccessor*`(리플렉션 액세서,
+JVM이 `DelegatingClassLoader`로 로드)에서도 발견됐다. 같은 메커니즘으로 `jdk.internal.reflect.` 전체를 무조건 제외하도록 확장했으며,
+ablation 테스트로 두 제외 모두 필요함을 확인했다(REQ-MM-016 §4.5 MM-E2E-4).
