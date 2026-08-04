@@ -82,6 +82,23 @@ public final class Pjacoco {
     }
 
     /**
+     * @return the header name for Brave/Micrometer field-header propagation (
+     *     {@code management.tracing.baggage.remote-fields=test.id}). Always returns {@code "test.id"}.
+     */
+    public static String fieldHeaderName() {
+        return "test.id";
+    }
+
+    /**
+     * @return the test id active on the current thread for use as a field-header value
+     *     (Brave BaggagePropagation remote field), or null when no test is active. The raw id is kept
+     *     (a {@code #} is legal in a header value); only control-URL query params are URL-encoded.
+     */
+    public static String fieldHeaderValue() {
+        return currentTestId();
+    }
+
+    /**
      * Open a per-test coverage boundary: {@code POST /__coverage__/test/start?testId=..&shardId=..}.
      * Best-effort; no-op when {@link #enabled()} is false.
      *
